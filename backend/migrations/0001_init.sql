@@ -1,0 +1,175 @@
+-- 0001_init.sql — MutasiHub schema (MySQL 8 / MariaDB 10.6+)
+-- Idempotent: safe to re-run; guarded by schema_migrations in code.
+
+CREATE TABLE IF NOT EXISTS members (
+  id VARCHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NULL,
+  name VARCHAR(255) NOT NULL DEFAULT '',
+  google_sub VARCHAR(255) NULL UNIQUE,
+  email_verified_at TIMESTAMP NULL,
+  callback_url VARCHAR(512) NULL,
+  totp_secret VARCHAR(255) NULL,
+  totp_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS admin_users (
+  id VARCHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  pin_hash VARCHAR(255) NULL,
+  role VARCHAR(32) NOT NULL DEFAULT 'admin',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS plans (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  slug VARCHAR(64) NOT NULL UNIQUE,
+  name VARCHAR(128) NOT NULL,
+  price_cents BIGINT NOT NULL DEFAULT 0,
+  duration_days INT NOT NULL DEFAULT 30,
+  max_accounts INT NOT NULL DEFAULT 2,
+  api_delay_minutes INT NOT NULL DEFAULT 5,
+  notif_interval_minutes INT NOT NULL DEFAULT 5,
+  max_devices INT NOT NULL DEFAULT 1,
+  callback_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id VARCHAR(36) PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  plan_id BIGINT UNSIGNED NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  starts_at TIMESTAMP NULL,
+  expires_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_sub_member (member_id),
+  INDEX idx_sub_plan (plan_id),
+  CONSTRAINT fk_sub_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE,
+  CONSTRAINT fk_sub_plan FOREIGN KEY (plan_id) REFERENCES plans (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS linked_accounts (
+  id VARCHAR(36) PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  provider VARCHAR(16) NOT NULL,
+  label VARCHAR(255) NOT NULL DEFAULT '',
+  phone_masked VARCHAR(64) NULL,
+  account_masked VARCHAR(64) NULL,
+  credential_ciphertext TEXT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  balance_cents BIGINT NOT NULL DEFAULT 0,
+  last_synced_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_la_member (member_id),
+  CONSTRAINT fk_la_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS mutations (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  linked_account_id VARCHAR(36) NOT NULL,
+  provider VARCHAR(16) NOT NULL,
+  tx_date DATETIME NOT NULL,
+  type VARCHAR(16) NOT NULL DEFAULT '',
+  amount_cents BIGINT NOT NULL DEFAULT 0,
+  description TEXT NULL,
+  sender VARCHAR(255) NULL,
+  dedup_hash CHAR(64) NOT NULL UNIQUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_mut_member_date (member_id, tx_date),
+  INDEX idx_mut_account (linked_account_id),
+  CONSTRAINT fk_mut_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE,
+  CONSTRAINT fk_mut_account FOREIGN KEY (linked_account_id) REFERENCES linked_accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  id VARCHAR(36) PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  key_hash CHAR(64) NOT NULL,
+  key_prefix VARCHAR(16) NOT NULL DEFAULT '',
+  scope VARCHAR(512) NOT NULL DEFAULT 'all',
+  ip_whitelist TEXT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  last_used_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_apikey_member (member_id),
+  INDEX idx_apikey_hash (key_hash),
+  CONSTRAINT fk_apikey_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS callbacks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  event VARCHAR(64) NOT NULL DEFAULT '',
+  payload TEXT NULL,
+  target_url VARCHAR(512) NULL,
+  status_code INT NULL,
+  response_body TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_cb_member (member_id),
+  CONSTRAINT fk_cb_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS settings (
+  setting_key VARCHAR(128) PRIMARY KEY,
+  value TEXT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  actor_type VARCHAR(32) NOT NULL DEFAULT '',
+  actor_id VARCHAR(64) NOT NULL DEFAULT '',
+  action VARCHAR(128) NOT NULL DEFAULT '',
+  detail TEXT NULL,
+  ip VARCHAR(64) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_actor (actor_type, actor_id),
+  INDEX idx_audit_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS gobiz_orders (
+  id VARCHAR(36) PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  subscription_id VARCHAR(36) NOT NULL,
+  amount_cents BIGINT NOT NULL DEFAULT 0,
+  qr_url VARCHAR(1024) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  external_id VARCHAR(128) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_go_member (member_id),
+  INDEX idx_go_sub (subscription_id),
+  CONSTRAINT fk_go_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE,
+  CONSTRAINT fk_go_sub FOREIGN KEY (subscription_id) REFERENCES subscriptions (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id VARCHAR(36) PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_prt_member (member_id),
+  CONSTRAINT fk_prt_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id VARCHAR(36) PRIMARY KEY,
+  member_id VARCHAR(36) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_evt_member (member_id),
+  CONSTRAINT fk_evt_member FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -1,0 +1,16 @@
+# Secrets — jangan pernah commit file env asli (hanya .env.example yang boleh).
+.env
+*.env
+!.env.example
+
+# Build output
+backend/mutasi-hub
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+
+# Artefak verifikasi (screenshot Playwright) — lokal saja, bukan source.
+shots-*/
+
+# Staging transfer / tooling lokal
+.muse/
