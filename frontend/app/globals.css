@@ -1407,3 +1407,25 @@ html, body { overflow-x: clip; }
   color: #047857;
 }
 
+
+/* --- Premium account list (Rekening terhubung) --- */
+.accounts-table .account-row td { vertical-align: middle; }
+.provider-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: #f1f5f9; color: #334155;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.01em;
+}
+.account-number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px; font-weight: 600; color: #0f172a; letter-spacing: 0.02em;
+}
+.account-label { font-size: 12px; }
+.balance-amount { font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+.actions-cell .account-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn-sm.btn, .btn.btn-sm { padding: 6px 12px; font-size: 12px; line-height: 1.2; border-radius: 8px; }
+.status-badges { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 768px) {
+  .actions-cell .account-actions { width: 100%; justify-content: flex-start; }
+  .account-number { font-size: 13px; }
+}

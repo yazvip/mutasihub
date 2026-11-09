@@ -32,3 +32,27 @@
 2. Periksa toolchain VPS (Go/Node/npm) dan jalankan baseline test/build. [BELUM-SELESAI]
 3. Baca FLOW.md/audit docs & modul backend/frontend sesuai tugas berikutnya. [BELUM-SELESAI]
 4. Setup .env lokal/dev di VPS (tanpa menyimpan secrets ke repo/dokumen) bila akan run live. [BELUM-SELESAI]
+
+--- 
+### Update: 2026-11-09 — UI/UX Rekening Terhubung (premium rapi)
+- **Perubahan:** Rekayasa ulang tampilan daftar rekening di 
+  - Masked number konsisten ( untuk DANA,  untuk BCA)
+  - Status badge dengan warna kode: hijau/Aktif, amber/Menunggu, merah/Gagal
+  - Saldo menampilkan  saat balance 0 (bukan )
+  - Tombol aksi pill-shaped (),  untuk pending DANA,  (danger)
+  -  untuk nama provider,  monospace
+- **File diubah:** , 
+- **Status:** Build Next.js berhasil, deployed ke VPS , belum commit/push ke GitHub
+- **Keterbatasan:** Belum verifikasi visual di browser live (butuh kredensial asli untuk login member)
+
+--- 
+### Update: 2026-11-09 — UI/UX Rekening Terhubung (premium rapi)
+- Perubahan: Rekayasa ulang tampilan daftar rekening di /member/accounts
+  - Masked number konsisten (0878*****77 untuk DANA, *****xxxx untuk BCA)
+  - Status badge dengan warna kode: hijau/Aktif, amber/Menunggu, merah/Gagal
+  - Saldo menampilkan Rp0 saat balance 0 (bukan —)
+  - Tombol aksi pill-shaped (btn-sm), Otorisasi DANA untuk pending DANA, Hapus (danger)
+  - provider-pill untuk nama provider, account-number monospace
+- File diubah: frontend/app/member/accounts/page.tsx, frontend/app/globals.css
+- Status: Build Next.js berhasil, deployed ke VPS /opt/mutasi-hub/frontend/.next/, belum commit/push ke GitHub
+- Keterbatasan: Belum verifikasi visual di browser live (butuh kredensial asli untuk login member)

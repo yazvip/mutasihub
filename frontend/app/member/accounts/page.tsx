@@ -291,46 +291,54 @@ function AccountsContent() {
                 </tr>
               </thead>
               <tbody>
-                {accounts.map((a) => (
-                  <tr key={a.id}>
-                    <td data-label="Provider">{providerLabel(a.provider)}</td>
-                    <td data-label="Nomor">
-                      {a.provider === 'DANA'
-                        ? (a.phone_masked ?? '-')
-                        : (a.account_masked ?? '-')}
-                      {a.label ? <><br /><span className="muted">{a.label}</span></> : null}
-                    </td>
-                    <td data-label="Saldo" className="num">
-                      {a.balance_cents !== undefined && a.balance_cents !== null
-                        ? formatRupiah(a.balance_cents / 100)
-                        : '—'}
-                    </td>
-                    <td data-label="Status" className="status-cell">
-                      <span className="status-badges">
-                        <StatusBadge status={a.status ?? 'pending'} />
-                        {a.sync_paused && (
-                          <span className="badge badge-amber">Sync dijeda</span>
-                        )}
-                      </span>
-                    </td>
-                    <td data-label="Aksi">
-                      {a.provider === 'DANA' && a.status === 'pending' && (
-                        <>
-                          <Button
-                            variant="outline"
-                            disabled={rebindBusy === a.id}
-                            onClick={() => openBinding(a.id)}
-                          >
-                            {rebindBusy === a.id ? 'Memproses…' : 'Otorisasi DANA'}
-                          </Button>{' '}
-                        </>
-                      )}
-                      <Button variant="danger" onClick={() => removeAccount(a.id)}>
-                        Hapus
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {accounts.map((a) => {
+                  const isDana = a.provider === 'DANA';
+                  const rawNum = isDana ? (a.phone_masked ?? '') : (a.account_masked ?? '');
+                  const displayNum = rawNum || '-';
+                  const balanceDisplay = a.balance_cents !== undefined && a.balance_cents !== null
+                    ? formatRupiah(a.balance_cents / 100)
+                    : 'Rp0';
+                  const isPendingDana = isDana && (a.status ?? 'pending') === 'pending';
+                  return (
+                    <tr key={a.id} className="account-row">
+                      <td data-label="Provider">
+                        <span className="provider-pill">{providerLabel(a.provider)}</span>
+                      </td>
+                      <td data-label="Nomor">
+                        <span className="account-number">{displayNum}</span>
+                        {a.label ? <span className="account-label muted"> · {a.label}</span> : null}
+                      </td>
+                      <td data-label="Saldo" className="num">
+                        <span className="balance-amount">{balanceDisplay}</span>
+                      </td>
+                      <td data-label="Status" className="status-cell">
+                        <span className="status-badges">
+                          <StatusBadge status={a.status ?? 'pending'} />
+                          {a.sync_paused && (
+                            <span className="badge badge-amber">Sync dijeda</span>
+                          )}
+                        </span>
+                      </td>
+                      <td data-label="Aksi" className="actions-cell">
+                        <div className="account-actions">
+                          {isPendingDana && (
+                            <Button
+                              variant="outline"
+                              className="btn-sm"
+                              disabled={rebindBusy === a.id}
+                              onClick={() => openBinding(a.id)}
+                            >
+                              {rebindBusy === a.id ? 'Memproses…' : 'Otorisasi DANA'}
+                            </Button>
+                          )}
+                          <Button variant="danger" className="btn-sm" onClick={() => removeAccount(a.id)}>
+                            Hapus
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
