@@ -419,7 +419,7 @@ export function DashboardShell({
 }: {
   nav: NavGroup[];
   title?: string;
-  contextLabel: string;
+  contextLabel: ReactNode;
   brandSub: string;
   showPill?: boolean;
   profile?: ShellProfile;

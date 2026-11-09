@@ -98,7 +98,7 @@ export default function MemberLayout({ children }: { children: ReactNode }) {
     <div className="member-shell">
       <DashboardShell
         nav={NAV}
-        contextLabel="Panel member"
+        contextLabel={<span className="live-indicator"><span className="dot" />Gateway Realtime</span>}
         brandSub="Portal Member"
         profile={profile}
         logoutHref="/login"
