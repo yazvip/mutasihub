@@ -956,8 +956,8 @@ export default function LandingPage() {
       {/* FOOTER */}
       <footer className="bg-white border-t border-slate-200 pt-16 pb-12 text-slate-600 text-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-12 border-b border-slate-100">
-            <div className="space-y-4 md:col-span-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8 pb-12 border-b border-slate-100">
+            <div className="space-y-4 col-span-2 md:col-span-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-extrabold text-base">
                   M
@@ -990,11 +990,26 @@ export default function LandingPage() {
                 <li><a href="#keamanan" className="hover:text-brand-600">Kebijakan Keamanan</a></li>
               </ul>
             </div>
+
+            <div>
+              <h3 className="text-xs font-mono uppercase tracking-wider font-bold text-slate-900 mb-4">Legal</h3>
+              <ul className="space-y-2 text-xs">
+                <li><a href="/terms" className="hover:text-brand-600">Syarat &amp; Ketentuan</a></li>
+                <li><a href="/privacy" className="hover:text-brand-600">Kebijakan Privasi</a></li>
+                <li><a href="#keamanan" className="hover:text-brand-600">Kebijakan Keamanan</a></li>
+              </ul>
+            </div>
           </div>
 
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4">
             <p>© {new Date().getFullYear()} {site_name}. Hak cipta dilindungi. Read-only, AES-256 hardware encrypted.</p>
-            <p className="text-[11px]">Bukan afiliasi atau bagian resmi dari Bank BCA atau DANA Indonesia.</p>
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[11px]">
+              <a href="/terms" className="hover:text-brand-600 font-medium">Syarat &amp; Ketentuan</a>
+              <span className="text-slate-300">·</span>
+              <a href="/privacy" className="hover:text-brand-600 font-medium">Kebijakan Privasi</a>
+              <span className="text-slate-300">·</span>
+              <span>Bukan afiliasi resmi Bank BCA atau DANA Indonesia.</span>
+            </div>
           </div>
         </div>
       </footer>

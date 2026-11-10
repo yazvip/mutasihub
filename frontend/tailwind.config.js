@@ -19,7 +19,7 @@
 module.exports = {
   important: true,
   corePlugins: { preflight: false },
-  content: ['./app/page.tsx', './app/layout.tsx', './app/login/page.tsx', './app/register/page.tsx', './components/auth-shell.tsx'],
+  content: ['./app/page.tsx', './app/layout.tsx', './app/login/page.tsx', './app/register/page.tsx', './app/terms/page.tsx', './app/privacy/page.tsx', './components/auth-shell.tsx', './components/legal-shell.tsx'],
   theme: {
     extend: {
       fontFamily: {

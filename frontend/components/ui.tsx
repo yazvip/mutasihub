@@ -381,7 +381,8 @@ export function SiteChrome({ children }: { children: ReactNode }) {
   // Landing (/) punya header + footer sendiri (desain v23) — jangan
   // render SiteHeader/SiteFooter di atasnya. Sama untuk /login dan
   // /register (v25): AuthShell punya logo + footer mini sendiri.
-  const isLanding = pathname === '/' || pathname === '/login' || pathname === '/register';
+  const isLanding = pathname === '/' || pathname === '/login' || pathname === '/register'
+    || pathname === '/terms' || pathname === '/privacy';
   return (
     <>
       {!isPanel && !isLanding && <SiteHeader />}
