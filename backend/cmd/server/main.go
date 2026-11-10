@@ -50,6 +50,10 @@ func main() {
 	// Sync worker: exits when ctx is cancelled.
 	go srv.Syncer().Start(ctx)
 
+	// Email reminder worker (v37): pengingat paket H-3/H-1 + notice
+	// kedaluwarsa, tiap 30 menit. Exits when ctx is cancelled.
+	go srv.EmailReminderLoop(ctx)
+
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      srv.Handler(),

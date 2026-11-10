@@ -7,6 +7,7 @@ import {
   IconBox,
   IconChart,
   IconGear,
+  IconMail,
   IconUsers,
   IconZap,
 } from '../../components/icons';
@@ -22,6 +23,7 @@ const NAV = [
     items: [
       { href: '/admin/plans', label: 'Paket', icon: <IconBox /> },
       { href: '/admin/members', label: 'Member', icon: <IconUsers /> },
+      { href: '/admin/announcements', label: 'Pengumuman', icon: <IconMail /> },
     ],
   },
   {

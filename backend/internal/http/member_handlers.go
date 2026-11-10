@@ -1186,6 +1186,11 @@ func (s *Server) handlePayGobiz(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal membuat order pembayaran")
 		return
 	}
+	// v37: email tagihan (pending) ke member — fail-open, order tetap
+	// dibuat walau email gagal terkirim.
+	if planName, memberEmail, _, err := s.subscriptionMailInfo(r.Context(), subID); err == nil {
+		s.sendOrderPendingEmail(r.Context(), id, memberEmail, planName, orderID, planPrice)
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"order_id": orderID, "subscription_id": subID, "amount_cents": planPrice,
 		"status":  "pending",
@@ -1237,6 +1242,37 @@ func (s *Server) activateSubscriptionTx(ctx context.Context, orderID, subID stri
 		}
 	}
 	return tx.Commit()
+}
+
+// subscriptionMailInfo mengambil data yang dibutuhkan email tagihan:
+// nama paket, email member, dan expires_at langganan.
+func (s *Server) subscriptionMailInfo(ctx context.Context, subID string) (planName, memberEmail string, expiresAt time.Time, err error) {
+	var memberID string
+	var exp sql.NullTime
+	err = s.store.DB.QueryRowContext(ctx, `SELECT sub.member_id, m.email, p.name, sub.expires_at
+		FROM subscriptions sub JOIN members m ON m.id=sub.member_id
+		JOIN plans p ON p.id=sub.plan_id WHERE sub.id=?`, subID).
+		Scan(&memberID, &memberEmail, &planName, &exp)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	if exp.Valid {
+		expiresAt = exp.Time
+	}
+	return planName, memberEmail, expiresAt, nil
+}
+
+// sendPaidEmailForSubscription mengirim email "pembayaran berhasil"
+// setelah aktivasi. Fail-open: dipakai di jalur callback Gobiz.
+func (s *Server) sendPaidEmailForSubscription(ctx context.Context, subID, orderID string) {
+	planName, memberEmail, expiresAt, err := s.subscriptionMailInfo(ctx, subID)
+	if err != nil {
+		s.log.Printf("http: gobiz callback: info email langganan %s gagal: %v", subID, err)
+		return
+	}
+	var memberID string
+	_ = s.store.DB.QueryRowContext(ctx, `SELECT member_id FROM subscriptions WHERE id=?`, subID).Scan(&memberID)
+	s.sendOrderPaidEmail(ctx, memberID, memberEmail, planName, orderID, expiresAt)
 }
 
 // verifyGobizOrderStatus re-verifies an order's paid status with the
@@ -1317,6 +1353,8 @@ func (s *Server) handleGobizCallback(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, http.StatusInternalServerError, "db_error", "gagal mengaktifkan langganan")
 				return
 			}
+			// v37: email pembayaran berhasil (fail-open).
+			s.sendPaidEmailForSubscription(r.Context(), subID, body.OrderID)
 			writeJSON(w, http.StatusOK, map[string]any{"message": "langganan diaktifkan"})
 			return
 		}
@@ -1342,5 +1380,7 @@ func (s *Server) handleGobizCallback(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal mengaktifkan langganan")
 		return
 	}
+	// v37: email pembayaran berhasil (fail-open).
+	s.sendPaidEmailForSubscription(r.Context(), subID, body.OrderID)
 	writeJSON(w, http.StatusOK, map[string]any{"message": "langganan diaktifkan"})
 }

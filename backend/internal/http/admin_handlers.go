@@ -408,13 +408,24 @@ func (s *Server) handlePublicSettings(w http.ResponseWriter, r *http.Request) {
 			defer rows.Close()
 			for rows.Next() {
 				var k, v string
-				if err := rows.Scan(&k, &v); err == nil {
+				// v37: HANYA kunci publik yang boleh keluar — settings
+				// berisi juga kredensial (mis. smtp_password terenkripsi,
+				// smtp_username) yang tidak boleh bocor ke landing.
+				if err := rows.Scan(&k, &v); err == nil && publicSettingKeys[k] {
 					settings[k] = v
 				}
 			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+}
+
+// publicSettingKeys: satu-satunya kunci settings yang boleh dibaca
+// tanpa login (landing). Semua kunci lain — termasuk smtp_* — hanya
+// lewat endpoint admin.
+var publicSettingKeys = map[string]bool{
+	"site_name": true, "tagline": true, "logo_url": true,
+	"accent_color": true, "gobiz_enabled": true,
 }
 
 func (s *Server) handleAdminGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +445,14 @@ func (s *Server) handleAdminGetSettings(w http.ResponseWriter, r *http.Request) 
 			settings[k] = v
 		}
 	}
+	// v37: password SMTP TIDAK PERNAH dikirim ke panel — panel hanya
+	// tahu apakah password sudah tersimpan (untuk placeholder input).
+	if pw, ok := settings["smtp_password"]; ok && pw != "" {
+		settings["smtp_password_configured"] = "1"
+	} else {
+		settings["smtp_password_configured"] = "0"
+	}
+	delete(settings, "smtp_password")
 	// Connecta base URL hidup di env server (CONNECTA_BASE_URL), bukan di
 	// tabel settings — tanpa ini panel selalu menampilkan "belum diatur"
 	// padahal koneksi sudah jalan. API key TIDAK PERNAH dikirim ke panel.
@@ -455,6 +474,10 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	allowed := map[string]bool{
 		"site_name": true, "tagline": true, "logo_url": true,
 		"accent_color": true, "gobiz_enabled": true,
+		// v37: pengaturan SMTP (password ditangani khusus di bawah).
+		"smtp_enabled": true, "smtp_host": true, "smtp_port": true,
+		"smtp_username": true, "smtp_password": true, "smtp_tls_mode": true,
+		"smtp_from_name": true, "smtp_from_email": true,
 	}
 	admin, _ := adminID(r)
 	for k, v := range body {
@@ -462,11 +485,57 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 			writeErr(w, http.StatusBadRequest, "invalid_setting", "setting tidak dikenal: "+k)
 			return
 		}
+		switch k {
+		case "smtp_enabled":
+			if v != "0" && v != "1" {
+				writeErr(w, http.StatusBadRequest, "invalid_setting", "smtp_enabled harus '0' atau '1'")
+				return
+			}
+		case "smtp_port":
+			if v != "" {
+				if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 65535 {
+					writeErr(w, http.StatusBadRequest, "invalid_setting", "smtp_port harus angka 1-65535")
+					return
+				}
+			}
+		case "smtp_tls_mode":
+			if v != "" && v != "none" && v != "starttls" && v != "tls" {
+				writeErr(w, http.StatusBadRequest, "invalid_setting", "smtp_tls_mode harus none, starttls, atau tls")
+				return
+			}
+		case "smtp_from_email":
+			if v != "" && !strings.Contains(v, "@") {
+				writeErr(w, http.StatusBadRequest, "invalid_setting", "smtp_from_email harus alamat email yang valid")
+				return
+			}
+		case "smtp_password":
+			// Kosong saat edit = pertahankan password lama (jangan
+			// menimpa dengan string kosong). Nilai baru dienkripsi
+			// AES-256-GCM sebelum disimpan — tidak pernah plaintext.
+			if v == "" {
+				continue
+			}
+			if len(s.encKey) == 0 {
+				writeErr(w, http.StatusServiceUnavailable, "encryption_unavailable", "kunci enkripsi server belum dikonfigurasi, password SMTP tidak bisa disimpan")
+				return
+			}
+			enc, err := crypto.Encrypt(s.encKey, v)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "db_error", "gagal mengenkripsi password SMTP")
+				return
+			}
+			v = "enc:" + enc
+		}
 		if err := s.store.SetSetting(r.Context(), k, v); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db_error", "gagal menyimpan setting "+k)
 			return
 		}
-		s.audit(r, "admin", admin, "setting_update", k+"="+v)
+		// Audit TIDAK PERNAH mencatat nilai password (bahkan ciphertext).
+		if k == "smtp_password" {
+			s.audit(r, "admin", admin, "setting_update", "smtp_password=(diperbarui)")
+		} else {
+			s.audit(r, "admin", admin, "setting_update", k+"="+v)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"message": "settings disimpan"})
 }

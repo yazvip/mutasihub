@@ -21,6 +21,17 @@ type SettingsForm = {
   accent_color: string;
   gobiz_enabled: boolean;
   connecta_base_url: string;
+  // v37: SMTP (password tidak pernah dikembalikan backend; hanya flag
+  // smtp_password_configured).
+  smtp_enabled: boolean;
+  smtp_host: string;
+  smtp_port: string;
+  smtp_username: string;
+  smtp_password: string;
+  smtp_tls_mode: string;
+  smtp_from_name: string;
+  smtp_from_email: string;
+  smtp_password_configured: boolean;
 };
 
 const DEFAULTS: SettingsForm = {
@@ -30,6 +41,15 @@ const DEFAULTS: SettingsForm = {
   accent_color: '#14532d',
   gobiz_enabled: true,
   connecta_base_url: '',
+  smtp_enabled: false,
+  smtp_host: '',
+  smtp_port: '587',
+  smtp_username: '',
+  smtp_password: '',
+  smtp_tls_mode: 'starttls',
+  smtp_from_name: 'MutasiHub',
+  smtp_from_email: '',
+  smtp_password_configured: false,
 };
 
 function maskUrl(url: string): string {
@@ -59,6 +79,8 @@ export default function AdminSettingsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  // v37: tes email SMTP (POST /api/v1/admin/email/test).
+  const [testingEmail, setTestingEmail] = useState(false);
 
   // P2-23: status pendaftaran webhook (GET /api/v1/admin/connecta/webhook).
   // Read-only; secret TIDAK PERNAH dikembalikan backend dan tidak tampil.
@@ -110,6 +132,24 @@ export default function AdminSettingsPage() {
             ),
             connecta_base_url:
               s.connecta_base_url ?? s.connectaBaseUrl ?? f.connecta_base_url,
+            // v37: SMTP — port disimpan string di backend; password
+            // tidak pernah dikembalikan (hanya flag configured).
+            smtp_enabled:
+              s.smtp_enabled === '1' || s.smtp_enabled === true
+                ? true
+                : s.smtp_enabled === '0' || s.smtp_enabled === false
+                  ? false
+                  : f.smtp_enabled,
+            smtp_host: s.smtp_host ?? f.smtp_host,
+            smtp_port: s.smtp_port ? String(s.smtp_port) : f.smtp_port,
+            smtp_username: s.smtp_username ?? f.smtp_username,
+            smtp_password: '',
+            smtp_tls_mode: s.smtp_tls_mode ?? f.smtp_tls_mode,
+            smtp_from_name: s.smtp_from_name ?? f.smtp_from_name,
+            smtp_from_email: s.smtp_from_email ?? f.smtp_from_email,
+            smtp_password_configured:
+              s.smtp_password_configured === '1' ||
+              s.smtp_password_configured === true,
           }));
         }
       })
@@ -135,15 +175,28 @@ export default function AdminSettingsPage() {
     try {
       // Backend: PUT /api/v1/admin/settings, decode map[string]string —
       // gobiz_enabled wajib string "1"/"0". Route POST tidak ada.
-      const payload = {
+      const payload: Record<string, string> = {
         site_name: form.site_name,
         tagline: form.tagline,
         logo_url: form.logo_url,
         accent_color: form.accent_color,
         gobiz_enabled: form.gobiz_enabled ? '1' : '0',
+        // v37: SMTP — password hanya dikirim bila diisi (kosong =
+        // pertahankan password lama di server).
+        smtp_enabled: form.smtp_enabled ? '1' : '0',
+        smtp_host: form.smtp_host,
+        smtp_port: form.smtp_port,
+        smtp_username: form.smtp_username,
+        smtp_tls_mode: form.smtp_tls_mode,
+        smtp_from_name: form.smtp_from_name,
+        smtp_from_email: form.smtp_from_email,
       };
+      if (form.smtp_password) payload.smtp_password = form.smtp_password;
       await apiPut('/api/v1/admin/settings', payload);
       setNotice('Pengaturan disimpan. Brand di seluruh halaman ikut berubah.');
+      // Password baru kini tersimpan — kosongkan fieldnya.
+      set('smtp_password', '');
+      if (form.smtp_password) set('smtp_password_configured', true);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -166,6 +219,21 @@ export default function AdminSettingsPage() {
       setError(friendlyError(err));
     } finally {
       setTesting(false);
+    }
+  }
+
+  // v37: kirim email tes ke alamat email admin yang login.
+  async function testEmail() {
+    setTestingEmail(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const d = await apiPost<any>('/api/v1/admin/email/test', {});
+      setNotice(`Email tes terkirim ke ${d?.to ?? 'email admin'}. Periksa kotak masuk (dan folder spam).`);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setTestingEmail(false);
     }
   }
 
@@ -227,6 +295,82 @@ export default function AdminSettingsPage() {
             <p className="muted" style={{ marginTop: 8 }}>
               Bila dimatikan, tombol bayar di halaman langganan member menampilkan
               instruksi pembayaran manual.
+            </p>
+          </Card>
+
+          {/* v37: SMTP — pengiriman email ke member (verifikasi, reset
+              password, tagihan, pengingat, pengumuman). Password
+              tersimpan terenkripsi di server dan tidak pernah tampil. */}
+          <Card
+            title="Email (SMTP)"
+            subtitle="Server email untuk verifikasi, reset password, tagihan, pengingat paket, dan pengumuman ke member."
+            actions={
+              <Button variant="outline" type="button" onClick={testEmail} disabled={testingEmail}>
+                {testingEmail ? 'Mengirim…' : 'Kirim Email Tes'}
+              </Button>
+            }
+          >
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
+              <input
+                type="checkbox"
+                style={{ width: 'auto' }}
+                checked={form.smtp_enabled}
+                onChange={(e) => set('smtp_enabled', e.target.checked)}
+              />
+              Aktifkan pengiriman email (SMTP)
+            </label>
+            <div className="form-grid" style={{ marginTop: 12 }}>
+              <Field label="Host SMTP" hint="Mis. smtp.gmail.com">
+                <input value={form.smtp_host} onChange={(e) => set('smtp_host', e.target.value)} placeholder="smtp.gmail.com" autoComplete="off" />
+              </Field>
+              <Field label="Port" hint="587 untuk STARTTLS, 465 untuk TLS.">
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={form.smtp_port}
+                  onChange={(e) => set('smtp_port', e.target.value)}
+                  placeholder="587"
+                />
+              </Field>
+              <Field label="Mode TLS">
+                <select value={form.smtp_tls_mode} onChange={(e) => set('smtp_tls_mode', e.target.value)}>
+                  <option value="starttls">STARTTLS (port 587)</option>
+                  <option value="tls">TLS implisit (port 465)</option>
+                  <option value="none">Tanpa TLS (relay lokal saja)</option>
+                </select>
+              </Field>
+              <Field label="Username SMTP">
+                <input value={form.smtp_username} onChange={(e) => set('smtp_username', e.target.value)} placeholder="akun@email.com" autoComplete="off" />
+              </Field>
+              <Field
+                label="Password SMTP"
+                hint={
+                  form.smtp_password_configured
+                    ? 'Password sudah tersimpan — isi hanya untuk mengganti, kosongkan untuk mempertahankan.'
+                    : 'Password disimpan terenkripsi di server.'
+                }
+              >
+                <input
+                  type="password"
+                  value={form.smtp_password}
+                  onChange={(e) => set('smtp_password', e.target.value)}
+                  placeholder={form.smtp_password_configured ? '••••••••' : ''}
+                  autoComplete="new-password"
+                />
+              </Field>
+              <Field label="Nama pengirim">
+                <input value={form.smtp_from_name} onChange={(e) => set('smtp_from_name', e.target.value)} placeholder="MutasiHub" />
+              </Field>
+              <Field label="Alamat pengirim" hint="Alamat yang tampil sebagai pengirim di email member.">
+                <input type="email" value={form.smtp_from_email} onChange={(e) => set('smtp_from_email', e.target.value)} placeholder="noreply@mutasi.rajacek.com" />
+              </Field>
+            </div>
+            <p className="muted" style={{ marginTop: 8 }}>
+              Selama SMTP belum dikonfigurasi, email verifikasi, reset
+              password, tagihan, dan pengingat tidak terkirim — tombol
+              &quot;Kirim Email Tes&quot; akan memberitahu bila pengaturan
+              belum lengkap.
             </p>
           </Card>
 

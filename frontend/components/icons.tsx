@@ -109,3 +109,11 @@ export const IconWallet = (p: P) => (
     <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
   </Svg>
 );
+
+// v37: amplop — menu Pengumuman admin.
+export const IconMail = (p: P) => (
+  <Svg {...p}>
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+  </Svg>
+);

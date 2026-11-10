@@ -111,10 +111,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		_, _ = s.store.DB.ExecContext(r.Context(), `INSERT INTO subscriptions (id, member_id, plan_id, status, starts_at, expires_at)
 			VALUES (?, ?, ?, 'active', NOW(), DATE_ADD(NOW(), INTERVAL 1 DAY))`, newID(), id, trialID)
 	}
-	// Email verification token (no SMTP yet: the token is stored hashed in
-	// the DB but is never delivered to the user — see handleVerifyEmail).
-	// P0-A: INSERT memakai 3 placeholder — argumen waktu ke-4 dulu membuat
-	// database/sql selalu menolak INSERT ini; error kini dicek, bukan dibuang.
+	// Email verification token: token disimpan hashed di DB, lalu
+	// tautan verifikasi dikirim via SMTP bila sudah dikonfigurasi
+	// (v37). Kirim gagal = fail-open (register tetap sukses; token
+	// tetap tersimpan dan bisa dikirim ulang nanti).
 	token := randomToken()
 	if _, err := s.store.DB.ExecContext(r.Context(), `INSERT INTO email_verification_tokens (id, member_id, token_hash, expires_at)
 		VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))`, newID(), id, sha256Hex(token)); err != nil {
@@ -122,6 +122,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "token_error", "gagal menyiapkan verifikasi email")
 		return
 	}
+	s.sendVerificationEmail(r.Context(), id, req.Email, token)
 	if err := s.setSession(w, id, "member"); err != nil {
 		writeErr(w, http.StatusInternalServerError, "session_error", "gagal membuat sesi")
 		return
@@ -505,7 +506,9 @@ func (s *Server) redirectFrontend(w http.ResponseWriter, r *http.Request, path s
 	http.Redirect(w, r, base+path, http.StatusFound)
 }
 
-// --- Forgot / reset password (no SMTP yet: reset token is logged) ---
+// --- Forgot / reset password (v37: tautan reset dikirim via SMTP
+// bila dikonfigurasi; gagal kirim = fail-open, jawaban tetap OK agar
+// tidak membocorkan email mana yang terdaftar) ---
 
 func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
@@ -537,8 +540,9 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "token_error", "gagal menyiapkan reset password")
 			return
 		}
-		// No SMTP yet: the token is stored hashed only and never logged
-		// or delivered — it becomes usable once SMTP is configured.
+		// v37: kirim tautan reset via SMTP (fail-open — gagal kirim
+		// tidak mengubah jawaban OK di bawah).
+		s.sendResetEmail(r.Context(), id, email, token)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"message": "bila email terdaftar, instruksi reset akan dikirim"})
 }
