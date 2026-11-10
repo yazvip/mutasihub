@@ -453,6 +453,14 @@ func (s *Server) handleAdminGetSettings(w http.ResponseWriter, r *http.Request) 
 		settings["smtp_password_configured"] = "0"
 	}
 	delete(settings, "smtp_password")
+	// v38: API key Mailketing TIDAK PERNAH dikirim ke panel — sama
+	// seperti password SMTP, hanya flag configured.
+	if k, ok := settings["mailketing_api_key"]; ok && k != "" {
+		settings["mailketing_api_key_configured"] = "1"
+	} else {
+		settings["mailketing_api_key_configured"] = "0"
+	}
+	delete(settings, "mailketing_api_key")
 	// Connecta base URL hidup di env server (CONNECTA_BASE_URL), bukan di
 	// tabel settings — tanpa ini panel selalu menampilkan "belum diatur"
 	// padahal koneksi sudah jalan. API key TIDAK PERNAH dikirim ke panel.
@@ -478,6 +486,9 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 		"smtp_enabled": true, "smtp_host": true, "smtp_port": true,
 		"smtp_username": true, "smtp_password": true, "smtp_tls_mode": true,
 		"smtp_from_name": true, "smtp_from_email": true,
+		// v38: provider pengiriman + API key Mailketing (ditangani
+		// khusus seperti password SMTP).
+		"mail_provider": true, "mailketing_api_key": true,
 	}
 	admin, _ := adminID(r)
 	for k, v := range body {
@@ -525,14 +536,38 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 				return
 			}
 			v = "enc:" + enc
+		case "mail_provider":
+			if v != "smtp" && v != "mailketing_api" {
+				writeErr(w, http.StatusBadRequest, "invalid_setting", "mail_provider harus 'smtp' atau 'mailketing_api'")
+				return
+			}
+		case "mailketing_api_key":
+			// Sama seperti smtp_password: kosong saat edit =
+			// pertahankan key lama; nilai baru dienkripsi AES-256-GCM.
+			if v == "" {
+				continue
+			}
+			if len(s.encKey) == 0 {
+				writeErr(w, http.StatusServiceUnavailable, "encryption_unavailable", "kunci enkripsi server belum dikonfigurasi, API key Mailketing tidak bisa disimpan")
+				return
+			}
+			enc, err := crypto.Encrypt(s.encKey, v)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "db_error", "gagal mengenkripsi API key Mailketing")
+				return
+			}
+			v = "enc:" + enc
 		}
 		if err := s.store.SetSetting(r.Context(), k, v); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db_error", "gagal menyimpan setting "+k)
 			return
 		}
-		// Audit TIDAK PERNAH mencatat nilai password (bahkan ciphertext).
+		// Audit TIDAK PERNAH mencatat nilai password / API key (bahkan
+		// ciphertext).
 		if k == "smtp_password" {
 			s.audit(r, "admin", admin, "setting_update", "smtp_password=(diperbarui)")
+		} else if k == "mailketing_api_key" {
+			s.audit(r, "admin", admin, "setting_update", "mailketing_api_key=(diperbarui)")
 		} else {
 			s.audit(r, "admin", admin, "setting_update", k+"="+v)
 		}

@@ -32,6 +32,11 @@ type SettingsForm = {
   smtp_from_name: string;
   smtp_from_email: string;
   smtp_password_configured: boolean;
+  // v38: provider pengiriman + API key Mailketing (key tidak pernah
+  // dikembalikan backend; hanya flag mailketing_api_key_configured).
+  mail_provider: string;
+  mailketing_api_key: string;
+  mailketing_api_key_configured: boolean;
 };
 
 const DEFAULTS: SettingsForm = {
@@ -50,6 +55,9 @@ const DEFAULTS: SettingsForm = {
   smtp_from_name: 'MutasiHub',
   smtp_from_email: '',
   smtp_password_configured: false,
+  mail_provider: 'smtp',
+  mailketing_api_key: '',
+  mailketing_api_key_configured: false,
 };
 
 function maskUrl(url: string): string {
@@ -79,7 +87,8 @@ export default function AdminSettingsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
-  // v37: tes email SMTP (POST /api/v1/admin/email/test).
+  // v37: kirim email tes ke alamat email admin yang login (v38: lewat
+  // provider pengiriman yang aktif).
   const [testingEmail, setTestingEmail] = useState(false);
 
   // P2-23: status pendaftaran webhook (GET /api/v1/admin/connecta/webhook).
@@ -150,6 +159,12 @@ export default function AdminSettingsPage() {
             smtp_password_configured:
               s.smtp_password_configured === '1' ||
               s.smtp_password_configured === true,
+            // v38: provider pengiriman + API key Mailketing.
+            mail_provider: s.mail_provider ?? f.mail_provider,
+            mailketing_api_key: '',
+            mailketing_api_key_configured:
+              s.mailketing_api_key_configured === '1' ||
+              s.mailketing_api_key_configured === true,
           }));
         }
       })
@@ -192,11 +207,17 @@ export default function AdminSettingsPage() {
         smtp_from_email: form.smtp_from_email,
       };
       if (form.smtp_password) payload.smtp_password = form.smtp_password;
+      // v38: provider + API key Mailketing — key hanya dikirim bila
+      // diisi (kosong = pertahankan key lama di server).
+      payload.mail_provider = form.mail_provider;
+      if (form.mailketing_api_key) payload.mailketing_api_key = form.mailketing_api_key;
       await apiPut('/api/v1/admin/settings', payload);
       setNotice('Pengaturan disimpan. Brand di seluruh halaman ikut berubah.');
       // Password baru kini tersimpan — kosongkan fieldnya.
       set('smtp_password', '');
       if (form.smtp_password) set('smtp_password_configured', true);
+      set('mailketing_api_key', '');
+      if (form.mailketing_api_key) set('mailketing_api_key_configured', true);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -300,77 +321,110 @@ export default function AdminSettingsPage() {
 
           {/* v37: SMTP — pengiriman email ke member (verifikasi, reset
               password, tagihan, pengingat, pengumuman). Password
-              tersimpan terenkripsi di server dan tidak pernah tampil. */}
+              tersimpan terenkripsi di server dan tidak pernah tampil.
+              v38: tambah provider Mailketing API (REST) sebagai
+              alternatif SMTP; API key tersimpan terenkripsi sama
+              seperti password SMTP. */}
           <Card
-            title="Email (SMTP)"
-            subtitle="Server email untuk verifikasi, reset password, tagihan, pengingat paket, dan pengumuman ke member."
+            title="Email"
+            subtitle="Provider pengiriman email untuk verifikasi, reset password, tagihan, pengingat paket, dan pengumuman ke member."
             actions={
               <Button variant="outline" type="button" onClick={testEmail} disabled={testingEmail}>
                 {testingEmail ? 'Mengirim…' : 'Kirim Email Tes'}
               </Button>
             }
           >
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-              <input
-                type="checkbox"
-                style={{ width: 'auto' }}
-                checked={form.smtp_enabled}
-                onChange={(e) => set('smtp_enabled', e.target.checked)}
-              />
-              Aktifkan pengiriman email (SMTP)
-            </label>
-            <div className="form-grid" style={{ marginTop: 12 }}>
-              <Field label="Host SMTP" hint="Mis. smtp.gmail.com">
-                <input value={form.smtp_host} onChange={(e) => set('smtp_host', e.target.value)} placeholder="smtp.gmail.com" autoComplete="off" />
-              </Field>
-              <Field label="Port" hint="587 untuk STARTTLS, 465 untuk TLS.">
-                <input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={form.smtp_port}
-                  onChange={(e) => set('smtp_port', e.target.value)}
-                  placeholder="587"
-                />
-              </Field>
-              <Field label="Mode TLS">
-                <select value={form.smtp_tls_mode} onChange={(e) => set('smtp_tls_mode', e.target.value)}>
-                  <option value="starttls">STARTTLS (port 587)</option>
-                  <option value="tls">TLS implisit (port 465)</option>
-                  <option value="none">Tanpa TLS (relay lokal saja)</option>
+            <div className="form-grid">
+              <Field label="Provider pengiriman">
+                <select value={form.mail_provider} onChange={(e) => set('mail_provider', e.target.value)}>
+                  <option value="mailketing_api">Mailketing API (disarankan)</option>
+                  <option value="smtp">SMTP</option>
                 </select>
-              </Field>
-              <Field label="Username SMTP">
-                <input value={form.smtp_username} onChange={(e) => set('smtp_username', e.target.value)} placeholder="akun@email.com" autoComplete="off" />
-              </Field>
-              <Field
-                label="Password SMTP"
-                hint={
-                  form.smtp_password_configured
-                    ? 'Password sudah tersimpan — isi hanya untuk mengganti, kosongkan untuk mempertahankan.'
-                    : 'Password disimpan terenkripsi di server.'
-                }
-              >
-                <input
-                  type="password"
-                  value={form.smtp_password}
-                  onChange={(e) => set('smtp_password', e.target.value)}
-                  placeholder={form.smtp_password_configured ? '••••••••' : ''}
-                  autoComplete="new-password"
-                />
               </Field>
               <Field label="Nama pengirim">
                 <input value={form.smtp_from_name} onChange={(e) => set('smtp_from_name', e.target.value)} placeholder="MutasiHub" />
               </Field>
-              <Field label="Alamat pengirim" hint="Alamat yang tampil sebagai pengirim di email member.">
+              <Field label="Alamat pengirim" hint="Alamat yang tampil sebagai pengirim di email member. Domainnya harus sudah terverifikasi di penyedia.">
                 <input type="email" value={form.smtp_from_email} onChange={(e) => set('smtp_from_email', e.target.value)} placeholder="noreply@mutasi.rajacek.com" />
               </Field>
             </div>
+            {form.mail_provider === 'mailketing_api' ? (
+              <div className="form-grid" style={{ marginTop: 12 }}>
+                <Field
+                  label="API key Mailketing"
+                  hint={
+                    form.mailketing_api_key_configured
+                      ? 'API key sudah tersimpan — isi hanya untuk mengganti, kosongkan untuk mempertahankan.'
+                      : 'Token dari dashboard Mailketing → Integrasi → Email Application API. Disimpan terenkripsi di server.'
+                  }
+                >
+                  <input
+                    type="password"
+                    value={form.mailketing_api_key}
+                    onChange={(e) => set('mailketing_api_key', e.target.value)}
+                    placeholder={form.mailketing_api_key_configured ? '••••••••' : ''}
+                    autoComplete="new-password"
+                  />
+                </Field>
+              </div>
+            ) : (
+              <>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginTop: 12 }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: 'auto' }}
+                    checked={form.smtp_enabled}
+                    onChange={(e) => set('smtp_enabled', e.target.checked)}
+                  />
+                  Aktifkan pengiriman email (SMTP)
+                </label>
+                <div className="form-grid" style={{ marginTop: 12 }}>
+                  <Field label="Host SMTP" hint="Mis. smtp.gmail.com">
+                    <input value={form.smtp_host} onChange={(e) => set('smtp_host', e.target.value)} placeholder="smtp.gmail.com" autoComplete="off" />
+                  </Field>
+                  <Field label="Port" hint="587 untuk STARTTLS, 465 untuk TLS.">
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={form.smtp_port}
+                      onChange={(e) => set('smtp_port', e.target.value)}
+                      placeholder="587"
+                    />
+                  </Field>
+                  <Field label="Mode TLS">
+                    <select value={form.smtp_tls_mode} onChange={(e) => set('smtp_tls_mode', e.target.value)}>
+                      <option value="starttls">STARTTLS (port 587)</option>
+                      <option value="tls">TLS implisit (port 465)</option>
+                      <option value="none">Tanpa TLS (relay lokal saja)</option>
+                    </select>
+                  </Field>
+                  <Field label="Username SMTP">
+                    <input value={form.smtp_username} onChange={(e) => set('smtp_username', e.target.value)} placeholder="akun@email.com" autoComplete="off" />
+                  </Field>
+                  <Field
+                    label="Password SMTP"
+                    hint={
+                      form.smtp_password_configured
+                        ? 'Password sudah tersimpan — isi hanya untuk mengganti, kosongkan untuk mempertahankan.'
+                        : 'Password disimpan terenkripsi di server.'
+                    }
+                  >
+                    <input
+                      type="password"
+                      value={form.smtp_password}
+                      onChange={(e) => set('smtp_password', e.target.value)}
+                      placeholder={form.smtp_password_configured ? '••••••••' : ''}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                </div>
+              </>
+            )}
             <p className="muted" style={{ marginTop: 8 }}>
-              Selama SMTP belum dikonfigurasi, email verifikasi, reset
-              password, tagihan, dan pengingat tidak terkirim — tombol
-              &quot;Kirim Email Tes&quot; akan memberitahu bila pengaturan
-              belum lengkap.
+              {form.mail_provider === 'mailketing_api'
+                ? 'Satu email terkirim memakai 1 kredit Mailketing. Selama API key belum diisi, email verifikasi, reset password, tagihan, dan pengingat tidak terkirim — tombol "Kirim Email Tes" akan memberitahu bila pengaturan belum lengkap.'
+                : 'Selama SMTP belum dikonfigurasi, email verifikasi, reset password, tagihan, dan pengingat tidak terkirim — tombol "Kirim Email Tes" akan memberitahu bila pengaturan belum lengkap.'}
             </p>
           </Card>
 

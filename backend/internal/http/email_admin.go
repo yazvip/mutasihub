@@ -15,8 +15,8 @@ import (
 // --- email tes (admin) ---
 
 // handleAdminTestEmail mengirim satu email tes ke alamat email admin
-// yang sedang login. Bila SMTP belum dikonfigurasi, gagal bersih 400
-// smtp_not_configured — tidak pernah mengarang keberhasilan.
+// yang sedang login, lewat provider yang aktif. Bila provider belum
+// dikonfigurasi, gagal bersih 400 — tidak pernah mengarang keberhasilan.
 func (s *Server) handleAdminTestEmail(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
@@ -28,25 +28,29 @@ func (s *Server) handleAdminTestEmail(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal membaca email admin")
 		return
 	}
-	subject := "Email tes MutasiHub — SMTP berfungsi"
-	inner := `<p>Halo,</p><p>Ini email tes dari MutasiHub. Bila Anda menerima email ini, pengaturan SMTP sudah benar.</p>`
-	textBody := "Halo,\n\nIni email tes dari MutasiHub. Bila Anda menerima email ini, pengaturan SMTP sudah benar."
+	subject := "Email tes MutasiHub — pengiriman email berfungsi"
+	inner := `<p>Halo,</p><p>Ini email tes dari MutasiHub. Bila Anda menerima email ini, pengaturan email sudah benar.</p>`
+	textBody := "Halo,\n\nIni email tes dari MutasiHub. Bila Anda menerima email ini, pengaturan email sudah benar."
 	text, htmlBody := emailShell(inner, textBody)
 	if err := s.sendMail(r.Context(), nil, "test", "", to, subject, text, htmlBody); err != nil {
 		if errors.Is(err, mail.ErrNotConfigured) {
 			writeErr(w, http.StatusBadRequest, "smtp_not_configured", "SMTP belum dikonfigurasi atau belum diaktifkan — isi pengaturan SMTP lalu coba lagi")
 			return
 		}
-		writeErr(w, http.StatusBadGateway, "smtp_error", "gagal mengirim email tes: "+friendlySMTPError(err))
+		if errors.Is(err, mail.ErrAPIKeyNotConfigured) {
+			writeErr(w, http.StatusBadRequest, "mailketing_api_key_not_configured", "API key Mailketing belum diisi atau alamat pengirim belum diatur — isi pengaturan Mailketing lalu coba lagi")
+			return
+		}
+		writeErr(w, http.StatusBadGateway, "mail_error", "gagal mengirim email tes: "+friendlyMailError(err))
 		return
 	}
 	s.audit(r, "admin", admin, "email_test", "email tes terkirim ke "+to)
 	writeJSON(w, http.StatusOK, map[string]any{"message": "email tes terkirim", "to": to})
 }
 
-// friendlySMTPError memendekkan error pengiriman untuk panel admin
+// friendlyMailError memendekkan error pengiriman untuk panel admin
 // (tanpa alamat server mentah yang panjang).
-func friendlySMTPError(err error) string {
+func friendlyMailError(err error) string {
 	msg := err.Error()
 	if i := strings.Index(msg, ": "); i >= 0 {
 		return msg[i+2:]
@@ -130,8 +134,8 @@ func (s *Server) handleAdminCreateAnnouncement(w http.ResponseWriter, r *http.Re
 
 // handleAdminSendAnnouncement mengirim pengumuman draf ke SEMUA member
 // aktif. Hanya draf yang bisa dikirim (pengiriman ulang dicegah oleh
-// status). Bila SMTP belum dikonfigurasi, gagal 400 tanpa mengubah
-// status — admin bisa mengirim lagi setelah SMTP diisi.
+// status). Bila provider belum dikonfigurasi, gagal 400 tanpa mengubah
+// status — admin bisa mengirim lagi setelah provider diisi.
 func (s *Server) handleAdminSendAnnouncement(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
@@ -147,12 +151,16 @@ func (s *Server) handleAdminSendAnnouncement(w http.ResponseWriter, r *http.Requ
 		writeErr(w, http.StatusConflict, "already_sent", "pengumuman ini sudah dikirim dan tidak bisa dikirim ulang")
 		return
 	}
-	if _, err := s.mailConfig(r.Context()); err != nil {
+	if _, err := s.mailSender(r.Context()); err != nil {
 		if errors.Is(err, mail.ErrNotConfigured) {
 			writeErr(w, http.StatusBadRequest, "smtp_not_configured", "SMTP belum dikonfigurasi atau belum diaktifkan — isi pengaturan SMTP lalu coba lagi")
 			return
 		}
-		writeErr(w, http.StatusBadGateway, "smtp_error", "konfigurasi SMTP tidak valid: "+friendlySMTPError(err))
+		if errors.Is(err, mail.ErrAPIKeyNotConfigured) {
+			writeErr(w, http.StatusBadRequest, "mailketing_api_key_not_configured", "API key Mailketing belum diisi atau alamat pengirim belum diatur — isi pengaturan Mailketing lalu coba lagi")
+			return
+		}
+		writeErr(w, http.StatusBadGateway, "mail_error", "konfigurasi pengiriman tidak valid: "+friendlyMailError(err))
 		return
 	}
 	rows, err := s.store.DB.QueryContext(r.Context(), `SELECT id, email FROM members

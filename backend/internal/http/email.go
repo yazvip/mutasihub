@@ -1,6 +1,8 @@
-// Email member (v37): SMTP yang dikonfigurasi admin, email
-// transaksional (verifikasi + reset password), email tagihan
-// (pending/paid/kedaluwarsa), pengingat H-3/H-1, dan pengumuman admin.
+// Email member (v37 SMTP, v38 + Mailketing API): provider pengiriman
+// dipilih admin lewat settings (mail_provider: "smtp" |
+// "mailketing_api"), email transaksional (verifikasi + reset password),
+// email tagihan (pending/paid/kedaluwarsa), pengingat H-3/H-1, dan
+// pengumuman admin.
 //
 // Semua pengiriman dicatat di email_logs (sent/failed + error).
 // Pengiriman TIDAK PERNAH menggagalkan alur utama (register, order,
@@ -25,9 +27,10 @@ import (
 
 // --- konfigurasi & pengiriman dasar ---
 
-// mailConfig memuat konfigurasi SMTP dari tabel settings.
-func (s *Server) mailConfig(ctx context.Context) (*mail.Config, error) {
-	return mail.LoadFromSettings(ctx, s.store, s.encKey, crypto.Decrypt)
+// mailSender memuat provider email yang aktif dari tabel settings
+// (v38: SMTP atau Mailketing API).
+func (s *Server) mailSender(ctx context.Context) (mail.Sender, error) {
+	return mail.LoadSender(ctx, s.store, s.encKey, crypto.Decrypt)
 }
 
 // logEmail mencatat satu percobaan pengiriman. Best-effort: kegagalan
@@ -56,21 +59,23 @@ func (s *Server) logEmail(ctx context.Context, memberID *string, kind, refID, su
 	}
 }
 
-// sendMail mengirim satu email dan mencatat hasilnya. Bila SMTP belum
-// dikonfigurasi, kembalikan mail.ErrNotConfigured TANPA mencatat baris
-// log (menghindari spam baris gagal di job pengingat tiap 30 menit).
+// sendMail mengirim satu email lewat provider aktif dan mencatat
+// hasilnya. Bila provider belum dikonfigurasi, kembalikan
+// mail.ErrNotConfigured / mail.ErrAPIKeyNotConfigured TANPA mencatat
+// baris log (menghindari spam baris gagal di job pengingat tiap
+// 30 menit).
 func (s *Server) sendMail(ctx context.Context, memberID *string, kind, refID, to, subject, textBody, htmlBody string) error {
-	cfg, err := s.mailConfig(ctx)
+	sender, err := s.mailSender(ctx)
 	if err != nil {
-		if errors.Is(err, mail.ErrNotConfigured) {
-			s.log.Printf("http: email: SMTP belum dikonfigurasi, email %s ke %s tidak dikirim", kind, to)
+		if errors.Is(err, mail.ErrNotConfigured) || errors.Is(err, mail.ErrAPIKeyNotConfigured) {
+			s.log.Printf("http: email: pengiriman belum dikonfigurasi, email %s ke %s tidak dikirim", kind, to)
 			return err
 		}
-		s.log.Printf("http: email: muat konfigurasi SMTP gagal: %v", err)
+		s.log.Printf("http: email: muat konfigurasi pengiriman gagal: %v", err)
 		s.logEmail(ctx, memberID, kind, refID, subject, to, "failed", err.Error())
 		return err
 	}
-	if err := mail.Send(cfg, to, subject, textBody, htmlBody); err != nil {
+	if err := sender.Send(ctx, to, subject, textBody, htmlBody); err != nil {
 		s.log.Printf("http: email: kirim %s ke %s gagal: %v", kind, to, err)
 		s.logEmail(ctx, memberID, kind, refID, subject, to, "failed", err.Error())
 		return err
@@ -141,8 +146,9 @@ func emailButton(label, href string) string {
 }
 
 // sendVerificationEmail mengirim tautan verifikasi setelah register.
-// Fail-open: SMTP belum dikonfigurasi / gagal kirim tidak menggagalkan
-// register — token tetap tersimpan dan bisa dikirim ulang nanti.
+// Fail-open: provider belum dikonfigurasi / gagal kirim tidak
+// menggagalkan register — token tetap tersimpan dan bisa dikirim
+// ulang nanti.
 func (s *Server) sendVerificationEmail(ctx context.Context, memberID, email, token string) {
 	link := s.frontendURL() + "/verify-email?token=" + url.QueryEscape(token)
 	subject := "Verifikasi email Anda — MutasiHub"
@@ -212,9 +218,9 @@ func (s *Server) sendExpiryReminders(ctx context.Context) {
 	if !s.store.Available() {
 		return
 	}
-	// SMTP belum dikonfigurasi = tidak ada yang bisa dikirim; cukup
+	// Provider belum dikonfigurasi = tidak ada yang bisa dikirim; cukup
 	// sekali log, jangan spam baris gagal per member.
-	if _, err := s.mailConfig(ctx); err != nil {
+	if _, err := s.mailSender(ctx); err != nil {
 		return
 	}
 	rows, err := s.store.DB.QueryContext(ctx, `SELECT sub.id, sub.member_id, m.email, p.name, sub.expires_at
