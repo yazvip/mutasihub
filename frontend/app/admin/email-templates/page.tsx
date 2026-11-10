@@ -290,7 +290,7 @@ export default function AdminEmailTemplatesPage() {
           </Field>
           <Field label="Placeholder yang berlaku" hint="Klik untuk menyisipkan di posisi kursor. Nilai diganti otomatis saat email dikirim; placeholder yang tidak dikenal dibiarkan apa adanya.">
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {selected.placeholders.map((ph) => (
+              {(selected.placeholders ?? []).map((ph) => (
                 <button
                   key={ph}
                   type="button"
@@ -309,9 +309,9 @@ export default function AdminEmailTemplatesPage() {
                 </button>
               ))}
             </div>
-            {selected.required_placeholders.length > 0 && (
+            {(selected.required_placeholders ?? []).length > 0 && (
               <p className="muted" style={{ margin: '8px 0 0', fontSize: 13 }}>
-                Wajib ada: {selected.required_placeholders.map((p) => `{{${p}}}`).join(', ')} — tanpanya
+                Wajib ada: {(selected.required_placeholders ?? []).map((p) => `{{${p}}}`).join(', ')} — tanpanya
                 tautan di email hilang.
               </p>
             )}

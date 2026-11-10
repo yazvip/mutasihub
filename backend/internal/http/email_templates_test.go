@@ -2,9 +2,11 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSubstitutePlaceholders(t *testing.T) {
@@ -115,12 +117,12 @@ func TestMigrationSeedMatchesDefaults(t *testing.T) {
 		t.Fatalf("baca migrasi 0017: %v", err)
 	}
 	snippets := map[string]string{
-		"email_verification":  "Terima kasih sudah mendaftar di MutasiHub",
-		"password_reset":      "membuat password baru. Tautan ini berlaku 1 jam",
-		"order_pending":       "Lihat Tagihan &amp; Bayar",
-		"order_paid":          "kini aktif sampai",
-		"expiry_reminder_h3":  "3 hari lagi",
-		"expiry_reminder_h1":  "berakhir <strong>besok",
+		"email_verification":   "Terima kasih sudah mendaftar di MutasiHub",
+		"password_reset":       "membuat password baru. Tautan ini berlaku 1 jam",
+		"order_pending":        "Lihat Tagihan &amp; Bayar",
+		"order_paid":           "kini aktif sampai",
+		"expiry_reminder_h3":   "3 hari lagi",
+		"expiry_reminder_h1":   "berakhir <strong>besok",
 		"subscription_expired": "telah berakhir pada",
 	}
 	for _, def := range defaultEmailTemplates {
@@ -201,5 +203,52 @@ func TestValidateTemplateTestInput(t *testing.T) {
 	// Batas atas yang masih lolos.
 	if _, _, _, msg := validateTemplateTestInput("a@b.id", strings.Repeat("x", 255), strings.Repeat("x", 20000)); msg != "" {
 		t.Fatalf("batas atas harus lolos: %q", msg)
+	}
+}
+
+// --- v39c: crash halaman template (null.length) ---
+
+// TestTemplateRowNeverNullArrays menjaga list + detail tidak pernah
+// mengembalikan "placeholders":null atau "required_placeholders":null:
+// 5 template tanpa Required (slice Go nil) dulu lolos sebagai null dan
+// frontend crash di selected.required_placeholders.length. Kedua handler
+// (list + detail) sama-sama memanggil templateRow, jadi menguji
+// templateRow mencakup keduanya.
+func TestTemplateRowNeverNullArrays(t *testing.T) {
+	s := noDBServer()
+	if len(defaultEmailTemplates) != 7 {
+		t.Fatalf("want 7 template default, got %d", len(defaultEmailTemplates))
+	}
+	for _, def := range defaultEmailTemplates {
+		row := s.templateRow(def, def.Subject, def.BodyHTML, time.Time{})
+		if row.Placeholders == nil {
+			t.Fatalf("%s: Placeholders nil", def.Key)
+		}
+		if row.Required == nil {
+			t.Fatalf("%s: Required nil", def.Key)
+		}
+		b, err := json.Marshal(row)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", def.Key, err)
+		}
+		js := string(b)
+		if strings.Contains(js, `"placeholders":null`) {
+			t.Fatalf("%s: JSON berisi placeholders:null: %s", def.Key, js)
+		}
+		if strings.Contains(js, `"required_placeholders":null`) {
+			t.Fatalf("%s: JSON berisi required_placeholders:null: %s", def.Key, js)
+		}
+	}
+	// 5 template tanpa Required wajib terserialisasi sebagai [].
+	for _, key := range []string{"order_pending", "order_paid", "expiry_reminder_h3", "expiry_reminder_h1", "subscription_expired"} {
+		def, ok := defaultEmailTemplate(key)
+		if !ok {
+			t.Fatalf("template %q tidak ditemukan", key)
+		}
+		row := s.templateRow(def, def.Subject, def.BodyHTML, time.Time{})
+		b, _ := json.Marshal(row)
+		if !strings.Contains(string(b), `"required_placeholders":[]`) {
+			t.Fatalf("%s: Required kosong harus jadi []: %s", key, b)
+		}
 	}
 }

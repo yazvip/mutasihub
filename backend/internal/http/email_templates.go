@@ -296,14 +296,25 @@ type emailTemplateRow struct {
 	UpdatedAt    string   `json:"updated_at"`
 }
 
+// nonNilStrings mengembalikan slice kosong (bukan nil) agar JSON selalu
+// berisi [] bukan null — frontend memanggil .length/.map pada kedua
+// array ini; null.length melempar TypeError dan halaman crash (v39c:
+// 5 template tanpa Required mengembalikan "required_placeholders":null).
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
+}
+
 func (s *Server) templateRow(def emailTemplateDef, subj, body string, updatedAt time.Time) emailTemplateRow {
 	return emailTemplateRow{
 		Key:          def.Key,
 		Label:        def.Label,
 		Subject:      subj,
 		BodyHTML:     body,
-		Placeholders: def.Placeholders,
-		Required:     def.Required,
+		Placeholders: nonNilStrings(def.Placeholders),
+		Required:     nonNilStrings(def.Required),
 		Customized:   !sameTemplateContent(subj, def.Subject) || !sameTemplateContent(body, def.BodyHTML),
 		UpdatedAt:    formatWIB(updatedAt),
 	}

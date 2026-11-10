@@ -4,7 +4,7 @@ Peta alur proyek MutasiHub: cek mutasi DANA & BCA realtime untuk bisnis online
 (top-up, deposit, rekonsiliasi pembayaran otomatis) via Connecta B2B Partner API.
 Dokumen ini ditulis dari kode yang sebenarnya (`backend/`, `frontend/`,
 `backend/migrations/0001–0017`) dan laporan audit yang ada — bukan dari ingatan.
-Terakhir diperbarui: 10 November 2026 (versi live v39b).
+Terakhir diperbarui: 10 November 2026 (versi live v39c).
 
 > Aturan dokumen ini: tidak ada nilai kredensial/secret/key/token/password
 > di sini — hanya NAMA variabel dan placeholder bila perlu.
@@ -400,7 +400,7 @@ Nilai di bawah ini HANYA nama + arti; isinya ada di server.
 
 ## 7. Alur deploy
 
-Versi terakhir live: **v39b** (backend v39b sha256 `2264c2ce9dce1ea46f70947280d08ad2ff87068628288564274c90962a2f753a`, frontend v39b; BUILD_ID `TWpuWvp6_e3GSStvPtHqq`). Penomoran:
+Versi terakhir live: **v39c** (backend v39c sha256 `7b56622fc0d80adb54fa85425c92ebb0f2f53b12169efde687430a3d432990c6`, frontend v39c; BUILD_ID `6tUambY5smaNPULyaBIK9`). Penomoran:
 `v<angka>` untuk rilis, huruf akhir (`b/c/d`) untuk hotfix.
 
 1. **Bangun lokal** (workspace `~/workspace/mutasi-platform/`):
@@ -495,6 +495,7 @@ catatan proyek; nomor versi terbukti dari script transfer
 | v38 | **Provider Mailketing API (pengganti SMTP, keputusan user)**: `internal/mail` tambah provider `mailketing_api` — kirim lewat REST API v2 `POST https://api.mailketing.co.id/api/v2/send` (`Authorization: Bearer` token, body `from_name`/`from_email`/`subject`/`recipient`/`content`, satu request = satu penerima; error mapping 401 token tidak valid / 402 kredit habis / 403 domain belum terverifikasi / 422 validasi / 429 rate limit; token tidak pernah muncul di error/log); pengaturan admin tambah `mail_provider` (`smtp` \| `mailketing_api`) + `mailketing_api_key` terenkripsi AES-256-GCM (hanya flag `mailketing_api_key_configured` yang dikembalikan ke panel); alamat/nama pengirim dipakai ulang dari field SMTP; tombol kirim email tes memakai provider aktif (400 `mailketing_api_key_not_configured` bila provider Mailketing aktif tapi key belum diisi); semua alur email (verifikasi, reset, tagihan, pengingat H-3/H-1, pengumuman) lewat provider aktif; kode SMTP tetap ada sebagai pilihan provider; tanpa migrasi baru (hanya settings key) |
 | v39 | **Template email custom admin**: tabel `email_templates` (migrasi 0017, di-seed 7 default premium) — key = nilai `kind` sendMail; admin mengedit subjek + isi HTML dari `/admin/email-templates` (menu Kelola, di sebelah Pengumuman) dengan placeholder `{{nama}}`/`{{paket}}`/`{{jumlah}}`/`{{order_id}}`/`{{tautan}}`/`{{berlaku_sampai}}`/`{{sisa_hari}}` (nilai di-escape HTML; placeholder tak dikenal dibiarkan apa adanya); teks polos diturunkan otomatis dari HTML (tautan jadi "label (url)"); fallback ke default kode bila baris hilang/kosong; tombol reset ke default + pratinjau render dengan data contoh (tanpa kirim email); validasi `{{tautan}}` wajib ada di template verifikasi/reset; endpoint `GET/PUT /api/v1/admin/email-templates[/...]` + `POST .../reset` + `POST .../preview`, diaudit; kerangka `emailShell` tetap sebagai pembungkus baku; email tes tetap baku, pengumuman tetap ditulis admin tiap kali |
 | v39b | **Tombol Kirim Tes per template**: `POST /api/v1/admin/email-templates/{key}/test` `{to, subject?, body_html?}` (admin-only, diaudit) — kirim tes template ke alamat tujuan yang dimasukkan admin; bila subject/body_html diberikan, isi editor saat itu dirender (belum tentu tersimpan), bila tidak, template tersimpan; subjek diawali `[Tes] `; validasi alamat tujuan (RFC 5322) → 400 bila tidak valid; gagal bersih bila provider belum dikonfigurasi; dicatat `email_logs` kind `template_test`; `GET /api/v1/admin/me` untuk prefill email admin; halaman template tambah input alamat tujuan (prefill email admin) + tombol Kirim Tes (nonaktif saat mengirim); tanpa migrasi baru (schema tetap 0017) |
+| v39c | **Perbaikan crash halaman Template Email ("Application error")**: akar masalah — 5 dari 7 definisi template tidak punya field `Required` (slice Go nil) sehingga `templateRow()` mengembalikan `"required_placeholders": null` di list + detail; frontend crash di `selected.required_placeholders.length` (`null.length` → TypeError → error boundary). Daftar tampil normal, auto-select template pertama (email_verification, punya Required) normal, 5 template lain crash saat diklik. Perbaikan: backend `templateRow()` memaksa `Placeholders`/`Required` non-nil (helper `nonNilStrings`, JSON `[]` bukan `null`; isi Required tetap kosong untuk 5 template itu — hanya verifikasi/reset yang wajib `{{tautan}}`); frontend `?? []` sebelum `.map`/`.length` (defense in depth); tes regresi `TestTemplateRowNeverNullArrays` (list + detail ke-7 template tidak pernah mengembalikan array null; 5 template tanpa Required terserialisasi `[]`); pratinjau/tes tidak mengembalikan array (hanya string) jadi tidak tersentuh. Tanpa migrasi baru (schema tetap 0017) |
 
 ---
 
