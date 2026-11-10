@@ -3,8 +3,8 @@
 Peta alur proyek MutasiHub: cek mutasi DANA & BCA realtime untuk bisnis online
 (top-up, deposit, rekonsiliasi pembayaran otomatis) via Connecta B2B Partner API.
 Dokumen ini ditulis dari kode yang sebenarnya (`backend/`, `frontend/`,
-`backend/migrations/0001–0014`) dan laporan audit yang ada — bukan dari ingatan.
-Terakhir diperbarui: 8 November 2026 (versi live v31b).
+`backend/migrations/0001–0015`) dan laporan audit yang ada — bukan dari ingatan.
+Terakhir diperbarui: 10 November 2026 (versi live v36).
 
 > Aturan dokumen ini: tidak ada nilai kredensial/secret/key/token/password
 > di sini — hanya NAMA variabel dan placeholder bila perlu.
@@ -128,7 +128,7 @@ mutasi-platform/
 │   │       ├── inquiry_handlers.go # inquiry + limit harian
 │   │       ├── webhooks.go         # webhook Connecta
 │   │       └── timefmt.go          # format WIB
-│   └── migrations/0001-0014  # skema + seed (lihat §5)
+│   └── migrations/0001-0015  # skema + seed (lihat §5)
 └── frontend/                 # Next.js 14.2 App Router, output standalone
     ├── app/
     │   ├── page.tsx          # landing (Tailwind, scope .landing-tw)
@@ -138,9 +138,10 @@ mutasi-platform/
     │   ├── login/ register/ forgot-password/ reset-password/
     │   ├── verify-email/ admin-login/   # auth (shell v25)
     │   ├── docs/             # dokumentasi API member (publik)
-    │   ├── member/           # dashboard, accounts, api, inquiry,
+    │   ├── member/           # dashboard, accounts, api,
     │   │                     #   playground, subscription, security,
-    │   │                     #   change-password
+    │   │                     #   change-password (halaman inquiry
+    │   │                     #   dihapus v35b, dialihkan ke playground)
     │   └── admin/            # dashboard, members, members/[id],
     │                         #   plans, settings, audit-logs, playground
     ├── components/
@@ -148,6 +149,7 @@ mutasi-platform/
     │   │                     #   DashboardShell, SiteChrome, Field
     │   ├── auth-shell.tsx    # AuthField, AuthButton, GoogleButton,
     │   │                     #   AuthDivider, AuthAlert
+    │   ├── inquiry-premium.tsx # kartu hasil inquiry Playground (v35)
     │   └── icons.tsx
     └── lib/
         ├── api.ts            # apiGet/apiPost, ApiError, parseBody,
@@ -317,7 +319,7 @@ allowlist `ADMIN_GOOGLE_EMAILS`. **Tidak ada UI/endpoint ganti PIN admin**
 ## 5. Tabel database utama
 
 Migrasi auto-apply saat startup backend (`db.Migrate`, tracking
-`schema_migrations`, versi = nama file). 0001–0014.
+`schema_migrations`, versi = nama file). 0001–0015.
 
 | Tabel | Kolom kunci | Relasi / catatan |
 |---|---|---|
@@ -325,7 +327,7 @@ Migrasi auto-apply saat startup backend (`db.Migrate`, tracking
 | `admin_users` | `id`, `email` UNIQUE, `pin_hash` (bcrypt), `role`, `session_version` (0006) | Admin pertama dibuat saat deploy awal |
 | `plans` | `id` BIGINT AUTO_INCREMENT, `slug` UNIQUE, `name`, `price_cents`, `duration_days`, `max_accounts`, `api_delay_minutes`, `notif_interval_minutes`, `max_devices`, `callback_enabled`, `inquiry_enabled` (0003), `inquiry_limit` NULL (0013), `is_active` | — |
 | `subscriptions` | `id`, `member_id` FK, `plan_id` FK, `status` (`pending`/`active`/`cancelled`), `starts_at`, `expires_at` | Satu member bisa punya riwayat banyak; yang aktif dijamin ≤1 sejak v30 (aktivasi membatalkan yang lain) |
-| `linked_accounts` | `id`, `member_id` FK, `provider` (DANA/BCA), `label`, `phone_masked`, `account_masked`, `credential_ciphertext` (AES-256-GCM), `status` (`pending`/`active`), `balance_cents`, `last_synced_at`, `created_at` | Index provider (0012, untuk lock BCA) |
+| `linked_accounts` | `id`, `member_id` FK, `provider` (DANA/BCA), `label`, `phone_masked`, `account_masked`, `credential_ciphertext` (AES-256-GCM), `status` (`pending`/`active`), `balance_cents`, `last_synced_at`, `created_at`, `authorized_at` NULL (0015, v34: tanggal otorisasi pertama, diisi saat pertama jadi `active`, tidak di-backfill) | Index provider (0012, untuk lock BCA) |
 | `mutations` | `id` BIGINT, `member_id` FK, `linked_account_id` FK, `provider`, `tx_date`, `type`, `amount_cents`, `description`, `sender`, `dedup_hash` CHAR(64) | Unik per rekening: `uq_mut_account_dedup (linked_account_id, dedup_hash)` (0007) |
 | `api_keys` | `id`, `member_id` FK, `key_hash` CHAR(64), `key_prefix`, `scope`, `ip_whitelist`, `is_active`, `last_used_at`, `expires_at` NULL (0010) | Maks 5 aktif/member (aturan aplikasi) |
 | `callbacks` | `id` BIGINT, `member_id` FK, `event`, `payload`, `target_url`, `status_code`, `response_body` | Jejak callback Enterprise (tiap percobaan) |
@@ -383,7 +385,7 @@ Nilai di bawah ini HANYA nama + arti; isinya ada di server.
 
 ## 7. Alur deploy
 
-Versi terakhir live: **v31b** (backend v30, frontend v31b). Penomoran:
+Versi terakhir live: **v36** (backend v34, frontend v36; BUILD_ID `f8efRenS2-nxG-2MU19RY`). Penomoran:
 `v<angka>` untuk rilis, huruf akhir (`b/c/d`) untuk hotfix.
 
 1. **Bangun lokal** (workspace `~/workspace/mutasi-platform/`):
@@ -465,6 +467,12 @@ catatan proyek; nomor versi terbukti dari script transfer
 | v30b | Badge "Sync dijeda" rapi di dalam kartu HP |
 | v31 | Semua 23 temuan audit UI/UX (P0: 2, P1: 9, P2: 12): tabel panel jadi kartu di HP, /docs + /admin-login ikut bahasa desain baru, aksen emerald `#047857`, input panel 16px |
 | v31b | Hotfix: harga member mono→sans tabular + tabel Rekening detail member jadi kartu |
+| v31c–v32 | Modal Tambah Rekening bertema channel (tab BCA badge "Read-Only" + "AES-256", PIN 6 digit) + kartu premium |
+| v33 | Daftar "Rekening terhubung" premium |
+| v34 | Tanggal "Ditambahkan" (selalu, dari `created_at`) + "Diotorisasi" (hanya bila aktif dan `authorized_at` terisi) di rekening; migrasi 0015 `authorized_at` + 2 jalur self-heal sync |
+| v35 | Redesign inquiry Playground (komponen `inquiry-premium.tsx`); inquiry member + admin terverifikasi live |
+| v35b | Hapus tab "Inquiry Rekening" dari nav member + hapus halaman `app/member/inquiry/`; redirect 307 `/member/inquiry` → `/member/playground` |
+| v36 | Redesign premium daftar Rekening terhubung, murni CSS (scope `.member-shell.accounts-card`; `page.tsx` tidak diubah) |
 
 ---
 
@@ -488,9 +496,23 @@ Jujur, dari konteks proyek (bukan tebakan):
   terbukti; tes pembuktian Rp10.000 menunggu keputusan user.
 - **Connecta kadang gangguan**: redirect-loop (301 ke URL sendiri),
   `SERVICE_TEMPORARILY_UNAVAILABLE`, `BANK_SERVICE_UNAVAILABLE`,
-  `LIMIT_EXCEEDED`. Happy path inquiry 200 **belum terverifikasi live**;
-  tes binding DANA nyata end-to-end juga belum ada member yang terbukti
-  menyelesaikan otorisasi sampai `active`.
+  `LIMIT_EXCEEDED`. Happy path inquiry 200 terverifikasi live 9 Nov
+  ~06:57 WIB (BRI 002, nama pemilik tampil), tapi sejak sore 9 Nov
+  Connecta mengembalikan `account_name` generik ("REKENING
+  TERVERIFIKASI …") bukan nama pemilik — menunggu jawaban developer
+  Connecta; jangan suruh member coba "Cek Nama Pemilik" sampai pulih.
+- **Webhook Connecta ditolak 401** (ditemukan 9 Nov ~18:37 WIB): semua
+  webhook ke `/webhooks/connecta` dibalas 401 — secret yang dikirim
+  Connecta tidak cocok dengan `CONNECTA_WEBHOOK_SECRET` di env server
+  (32 karakter, terisi; daftar ulang webhook tidak memperbaiki).
+  Backend terverifikasi benar (probe: header `X-Webhook-Secret` dan
+  field body `secret` → 200; field `webhook_secret` / tanpa secret →
+  401). Akibatnya binding DANA tidak pernah jadi `active`. Langkah
+  berikut: tanya developer Connecta secret dikirim di header/field apa;
+  bila `webhook_secret`, patch backend terima field itu juga. Setelah
+  perbaikan, member wajib otorisasi ulang (webhook yang ditolak tidak
+  dikirim ulang). Tes binding DANA nyata end-to-end belum ada member
+  yang terbukti menyelesaikan otorisasi sampai `active`.
 - **PIN admin tidak ada UI/endpoint ganti** — ganti manual dari server
   (terakhir 8 Nov 2026; nilai PIN tidak dicatat di mana pun).
 - **Kuota demo Connecta kedaluwarsa 2026-12-07 10:10 WIB** (5 DANA / 1 BCA).
