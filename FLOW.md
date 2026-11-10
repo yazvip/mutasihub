@@ -391,8 +391,10 @@ Versi terakhir live: **v36** (backend v34, frontend v36; BUILD_ID `f8efRenS2-nxG
 1. **Bangun lokal** (workspace `~/workspace/mutasi-platform/`):
    - Backend: `source ~/workspace/tools/go1.27.2/env.sh` (Go 1.27.2,
      `GOTOOLCHAIN=local`) → `go vet ./...` + `go test ./...` hijau →
-     `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath
-     -ldflags='-s -w' -o <staging>/mutasi-hub ./cmd/server`.
+     `GOOS=linux GOARCH=amd64 go build -o <staging>/mutasi-hub ./cmd/server`
+     (polos — tanpa `-trimpath`, `-ldflags '-s -w'`, atau `CGO_ENABLED=0`;
+     perintah lama dengan ketiganya menghasilkan binary berbeda, terbukti
+     saat verifikasi rebuild v34: hash hanya cocok dengan `go build` polos).
    - Frontend: `NEXT_PUBLIC_API_URL=https://mutasi.rajacek.com
      NEXT_PUBLIC_SITE_NAME=MutasiHub npm run build` → salin
      `.next/standalone` + `.next/static` + `public/` (standalone TIDAK
