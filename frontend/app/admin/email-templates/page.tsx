@@ -3,6 +3,8 @@
 // v39: Template email yang bisa dicustom admin — daftar 7 template,
 // edit subjek + isi HTML dengan placeholder {{...}}, simpan, reset ke
 // default, dan pratinjau hasil render (tanpa mengirim email).
+// v39b: tombol Kirim Tes per template — admin memasukkan alamat email
+// tujuan, isi editor saat itu dikirim sebagai email tes ([Tes] ...).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPut, friendlyError } from '../../../lib/api';
@@ -47,6 +49,8 @@ export default function AdminEmailTemplatesPage() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [showText, setShowText] = useState(false);
+  const [testTo, setTestTo] = useState('');
+  const [testSending, setTestSending] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const selected = list.find((t) => t.key === selectedKey) ?? null;
@@ -73,6 +77,15 @@ export default function AdminEmailTemplatesPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // v39b: prefill alamat tujuan kirim tes dengan email admin yang login.
+  useEffect(() => {
+    apiGet<any>('/api/v1/admin/me')
+      .then((d) => {
+        if (d?.email) setTestTo(d.email);
+      })
+      .catch(() => {});
+  }, []);
 
   function select(t: EmailTemplate) {
     setSelectedKey(t.key);
@@ -169,6 +182,32 @@ export default function AdminEmailTemplatesPage() {
       setError(friendlyError(err));
     } finally {
       setPreviewing(false);
+    }
+  }
+
+  async function sendTest() {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    const to = testTo.trim();
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      setError('Masukkan alamat email tujuan yang valid.');
+      return;
+    }
+    setTestSending(true);
+    try {
+      // Kirim isi editor saat itu (belum tentu tersimpan) — backend
+      // merendernya dengan data contoh yang sama seperti pratinjau.
+      await apiPost<any>(`/api/v1/admin/email-templates/${selected.key}/test`, {
+        to,
+        subject: subject.trim(),
+        body_html: body.trim(),
+      });
+      setNotice(`Email tes terkirim ke ${to}. Periksa kotak masuk (dan folder spam).`);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setTestSending(false);
     }
   }
 
@@ -288,6 +327,23 @@ export default function AdminEmailTemplatesPage() {
               {resetting ? 'Mereset…' : resetArmed ? 'Yakin reset ke default?' : 'Reset ke Default'}
             </Button>
           </div>
+          <Field
+            label="Kirim Tes"
+            hint="Kirim email tes template ini ke alamat berikut — yang dikirim adalah isi editor saat itu (belum tentu tersimpan), dengan subjek diawali [Tes]."
+          >
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input
+                type="email"
+                value={testTo}
+                onChange={(e) => setTestTo(e.target.value)}
+                placeholder="alamat@email.com"
+                style={{ flex: '1 1 240px' }}
+              />
+              <Button onClick={sendTest} disabled={testSending}>
+                {testSending ? 'Mengirim…' : 'Kirim Tes'}
+              </Button>
+            </div>
+          </Field>
         </Card>
       )}
 

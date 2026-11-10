@@ -144,3 +144,62 @@ func TestSameTemplateContent(t *testing.T) {
 		t.Fatalf("isi berbeda harus dianggap berbeda")
 	}
 }
+
+// --- v39b: kirim tes per template ---
+
+func TestRenderTemplateContent(t *testing.T) {
+	vars := map[string]string{
+		"nama":   "Andi <b>Pratama</b>",
+		"paket":  "Pro",
+		"tautan": "https://mutasi.rajacek.com/verify-email?token=contoh",
+	}
+	subj, text, htmlBody := renderTemplateContent(
+		"Verifikasi email — paket {{paket}}",
+		`<p>Halo, {{nama}},</p><p>Tekan <a href="{{tautan}}">tautan ini</a> atau abaikan {{kode}}.</p>`, vars)
+	if subj != "Verifikasi email — paket Pro" {
+		t.Fatalf("subjek: got %q", subj)
+	}
+	if !strings.Contains(htmlBody, "Andi &lt;b&gt;Pratama&lt;/b&gt;") {
+		t.Fatalf("nilai harus di-escape di badan: got %q", htmlBody)
+	}
+	if !strings.Contains(htmlBody, "MutasiHub") {
+		t.Fatalf("hasil harus dibungkus shell brand")
+	}
+	if !strings.Contains(htmlBody, "{{kode}}") {
+		t.Fatalf("placeholder tak dikenal harus dibiarkan apa adanya")
+	}
+	if !strings.Contains(text, "tautan ini (https://mutasi.rajacek.com/verify-email?token=contoh)") {
+		t.Fatalf("teks harus memuat tautan sebagai label (url): got %q", text)
+	}
+	if strings.Contains(text, "<p>") || strings.Contains(text, "<a ") {
+		t.Fatalf("teks tidak boleh berisi tag: got %q", text)
+	}
+}
+
+func TestValidateTemplateTestInput(t *testing.T) {
+	// Valid: email + isi editor lengkap.
+	if _, _, _, msg := validateTemplateTestInput("admin@rajacek.com", "Subjek {{paket}}", "<p>Isi</p>"); msg != "" {
+		t.Fatalf("input valid ditolak: %q", msg)
+	}
+	// Valid: email saja (pakai template tersimpan).
+	if _, _, _, msg := validateTemplateTestInput(" admin@rajacek.com ", "", ""); msg != "" {
+		t.Fatalf("email saja harus valid: %q", msg)
+	}
+	// Tidak valid: alamat tujuan.
+	for _, bad := range []string{"", "bukan-email", "a@b", "a b@c.id", "a@b c.id", "a@@b.id"} {
+		if _, _, _, msg := validateTemplateTestInput(bad, "S", "<p>B</p>"); msg == "" {
+			t.Fatalf("alamat %q harus ditolak", bad)
+		}
+	}
+	// Terlalu panjang: subjek >255, isi >20000.
+	if _, _, _, msg := validateTemplateTestInput("a@b.id", strings.Repeat("x", 256), "<p>B</p>"); msg == "" {
+		t.Fatalf("subjek >255 harus ditolak")
+	}
+	if _, _, _, msg := validateTemplateTestInput("a@b.id", "S", strings.Repeat("x", 20001)); msg == "" {
+		t.Fatalf("isi >20000 harus ditolak")
+	}
+	// Batas atas yang masih lolos.
+	if _, _, _, msg := validateTemplateTestInput("a@b.id", strings.Repeat("x", 255), strings.Repeat("x", 20000)); msg != "" {
+		t.Fatalf("batas atas harus lolos: %q", msg)
+	}
+}

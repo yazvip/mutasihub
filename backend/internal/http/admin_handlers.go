@@ -12,6 +12,20 @@ import (
 	"mutasi-hub/internal/domain"
 )
 
+func (s *Server) handleAdminMe(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	admin, _ := adminID(r)
+	var email string
+	if err := s.store.DB.QueryRowContext(r.Context(),
+		`SELECT email FROM admin_users WHERE id=?`, admin).Scan(&email); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error", "gagal membaca data admin")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": admin, "email": email})
+}
+
 func (s *Server) handleAdminListPlans(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return

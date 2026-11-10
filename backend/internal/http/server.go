@@ -122,6 +122,7 @@ func (s *Server) routes() {
 
 	// Admin.
 	m.HandleFunc("POST /api/v1/admin/login", s.handleAdminLogin)
+	m.HandleFunc("GET /api/v1/admin/me", s.authAdmin(s.handleAdminMe))
 	m.HandleFunc("GET /api/v1/admin/plans", s.authAdmin(s.handleAdminListPlans))
 	m.HandleFunc("POST /api/v1/admin/plans", s.authAdmin(s.handleAdminCreatePlan))
 	m.HandleFunc("PUT /api/v1/admin/plans/{id}", s.authAdmin(s.handleAdminUpdatePlan))
@@ -141,6 +142,7 @@ func (s *Server) routes() {
 	m.HandleFunc("PUT /api/v1/admin/email-templates/{key}", s.authAdmin(s.handleAdminUpdateEmailTemplate))
 	m.HandleFunc("POST /api/v1/admin/email-templates/{key}/reset", s.authAdmin(s.handleAdminResetEmailTemplate))
 	m.HandleFunc("POST /api/v1/admin/email-templates/{key}/preview", s.authAdmin(s.handleAdminPreviewEmailTemplate))
+	m.HandleFunc("POST /api/v1/admin/email-templates/{key}/test", s.authAdmin(s.handleAdminTestEmailTemplate))
 	m.HandleFunc("GET /api/v1/admin/audit-logs", s.authAdmin(s.handleAdminAuditLogs))
 	m.HandleFunc("GET /api/v1/admin/connecta/webhook", s.authAdmin(s.handleAdminConnectaWebhookStatus))
 	m.HandleFunc("GET /api/v1/admin/connecta/quota", s.authAdmin(s.handleAdminQuota))

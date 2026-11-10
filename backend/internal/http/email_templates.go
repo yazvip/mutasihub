@@ -19,11 +19,14 @@ package http
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"html"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
+	"mutasi-hub/internal/mail"
 )
 
 // emailTemplateDef mendeskripsikan satu jenis email: key = nilai `kind`
@@ -216,6 +219,17 @@ func (s *Server) loadEmailTemplate(ctx context.Context, def emailTemplateDef) (s
 	return resolveTemplate(def, subj.String, body.String, true)
 }
 
+// renderTemplateContent mengganti placeholder di subjek + isi, lalu
+// membungkus dengan emailShell. Mengembalikan (subjek, teks, HTML).
+// Pure — dipakai renderEmailTemplate (template tersimpan) maupun
+// kirim tes (isi editor saat itu).
+func renderTemplateContent(subject, bodyHTML string, vars map[string]string) (string, string, string) {
+	subj := substitutePlaceholders(subject, vars, false)
+	body := substitutePlaceholders(bodyHTML, vars, true)
+	text, htmlBody := emailShell(body, htmlToText(body))
+	return subj, text, htmlBody
+}
+
 // renderEmailTemplate memuat template, mengganti placeholder, lalu
 // membungkus dengan emailShell. Mengembalikan (subjek, teks, HTML).
 func (s *Server) renderEmailTemplate(ctx context.Context, key string, vars map[string]string) (string, string, string) {
@@ -224,10 +238,7 @@ func (s *Server) renderEmailTemplate(ctx context.Context, key string, vars map[s
 		return "", "", ""
 	}
 	subj, body := s.loadEmailTemplate(ctx, def)
-	subj = substitutePlaceholders(subj, vars, false)
-	body = substitutePlaceholders(body, vars, true)
-	text, htmlBody := emailShell(body, htmlToText(body))
-	return subj, text, htmlBody
+	return renderTemplateContent(subj, body, vars)
 }
 
 // memberDisplayName mengambil nama member untuk sapaan {{nama}}:
@@ -437,4 +448,77 @@ func (s *Server) handleAdminPreviewEmailTemplate(w http.ResponseWriter, r *http.
 		"text":    text,
 		"html":    htmlBody,
 	})
+}
+
+// validateTemplateTestInput menormalisasi body request kirim tes
+// template: alamat tujuan wajib email valid; subjek/isi (bila
+// diberikan) dibatasi panjang yang sama dengan simpan template.
+// Subjek/isi kosong berarti "pakai template tersimpan" — jadi keduanya
+// boleh kosong, tapi tidak boleh sebelah saja melebihi batas.
+// Mengembalikan (to, subject, body, pesanError) — pesanError kosong
+// berarti valid.
+func validateTemplateTestInput(to, subject, body string) (string, string, string, string) {
+	to = strings.TrimSpace(to)
+	if !validEmail(to) {
+		return "", "", "", "alamat email tujuan tidak valid"
+	}
+	subject = strings.TrimSpace(subject)
+	body = strings.TrimSpace(body)
+	if len(subject) > 255 || len(body) > 20000 {
+		return "", "", "", "subjek maks 255 karakter, isi maks 20000 karakter"
+	}
+	return to, subject, body, ""
+}
+
+// handleAdminTestEmailTemplate mengirim email tes untuk satu template
+// ke alamat yang diminta admin (v39b). Bila subject + body_html
+// diberikan (isi editor saat itu, belum tentu tersimpan), keduanya
+// dirender dengan data contoh yang sama seperti preview; bila tidak
+// diberikan, template tersimpan yang dirender. Subjek diawali "[Tes] "
+// supaya jelas ini email tes. Pengiriman dicatat ke email_logs
+// (kind "template_test", refID = key template).
+func (s *Server) handleAdminTestEmailTemplate(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	key := r.PathValue("key")
+	if _, ok := defaultEmailTemplate(key); !ok {
+		writeErr(w, http.StatusNotFound, "not_found", "template email tidak ditemukan")
+		return
+	}
+	var req struct {
+		To       string `json:"to"`
+		Subject  string `json:"subject"`
+		BodyHTML string `json:"body_html"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	to, subj, body, msg := validateTemplateTestInput(req.To, req.Subject, req.BodyHTML)
+	if msg != "" {
+		writeErr(w, http.StatusBadRequest, "invalid_input", msg)
+		return
+	}
+	vars := s.sampleTemplateVars(key)
+	var subject, text, htmlBody string
+	if subj != "" && body != "" {
+		subject, text, htmlBody = renderTemplateContent(subj, body, vars)
+	} else {
+		subject, text, htmlBody = s.renderEmailTemplate(r.Context(), key, vars)
+	}
+	if err := s.sendMail(r.Context(), nil, "template_test", key, to, "[Tes] "+subject, text, htmlBody); err != nil {
+		if errors.Is(err, mail.ErrNotConfigured) {
+			writeErr(w, http.StatusBadRequest, "smtp_not_configured", "SMTP belum dikonfigurasi atau belum diaktifkan — isi pengaturan SMTP lalu coba lagi")
+			return
+		}
+		if errors.Is(err, mail.ErrAPIKeyNotConfigured) {
+			writeErr(w, http.StatusBadRequest, "mailketing_api_key_not_configured", "API key Mailketing belum diisi atau alamat pengirim belum diatur — isi pengaturan Mailketing lalu coba lagi")
+			return
+		}
+		writeErr(w, http.StatusBadGateway, "mail_error", "gagal mengirim email tes: "+friendlyMailError(err))
+		return
+	}
+	admin, _ := adminID(r)
+	s.audit(r, "admin", admin, "email_template_test", "tes template "+key+" ke "+to)
+	writeJSON(w, http.StatusOK, map[string]any{"message": "email tes terkirim", "to": to, "key": key})
 }
