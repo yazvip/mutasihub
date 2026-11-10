@@ -3,8 +3,8 @@
 Peta alur proyek MutasiHub: cek mutasi DANA & BCA realtime untuk bisnis online
 (top-up, deposit, rekonsiliasi pembayaran otomatis) via Connecta B2B Partner API.
 Dokumen ini ditulis dari kode yang sebenarnya (`backend/`, `frontend/`,
-`backend/migrations/0001–0016`) dan laporan audit yang ada — bukan dari ingatan.
-Terakhir diperbarui: 10 November 2026 (versi live v38).
+`backend/migrations/0001–0017`) dan laporan audit yang ada — bukan dari ingatan.
+Terakhir diperbarui: 10 November 2026 (versi live v39).
 
 > Aturan dokumen ini: tidak ada nilai kredensial/secret/key/token/password
 > di sini — hanya NAMA variabel dan placeholder bila perlu.
@@ -302,6 +302,8 @@ allowlist `ADMIN_GOOGLE_EMAILS`. **Tidak ada UI/endpoint ganti PIN admin**
 | Paket | `GET/POST/PUT/DELETE /api/v1/admin/plans` — CRUD lengkap incl. `inquiry_enabled` + `inquiry_limit` (nullable: null = hapus batas, tidak dikirim = tidak diubah); audit old → new. |
 | Member | `GET /api/v1/admin/members` (pagination + filter + `total_count`), `GET /api/v1/admin/members/{id}` (email ter-mask, langganan aktif, rekening masked, statistik, prefix API key), `PUT /api/v1/admin/members/{id}` `{name?, plan_id?, status?, email?}` — ganti paket = tutup lama (`cancelled`) + insert baru; ganti email = `google_sub` dihapus + `email_verified_at` direset (unik, 409 `email_taken`); `disabled` menutup akses total (login 403, sesi lama 403, API key 401). `POST /api/v1/admin/members/{id}/reset-password` — sandi sementara **acak 16 karakter** (tampil sekali ke admin), `must_change_password=1`, `session_version`+1. |
 | Pengaturan | `GET/PUT /api/v1/admin/settings` — 5 kunci (lihat §6). |
+| Email | `POST /api/v1/admin/email/test` — kirim email tes ke email admin lewat provider aktif (400 bila provider belum dikonfigurasi); semua pengiriman dicatat di `email_logs`. |
+| Template Email (v39) | `GET/PUT /api/v1/admin/email-templates[/{key}]`, `POST .../{key}/reset`, `POST .../{key}/preview` — 7 template (verifikasi, reset, tagihan pending/paid, pengingat H-3/H-1, kedaluwarsa) dengan placeholder `{{...}}`; isi default premium di-seed migrasi 0017; fallback ke default kode bila baris hilang/kosong; pratinjau render tanpa kirim. |
 | Audit log | `GET /api/v1/admin/audit-logs` — semua aksi admin/member penting tercatat di `audit_logs` (actor = ID atau hash SHA-256 email, tanpa PII mentah). |
 | Connecta | `GET /api/v1/admin/connecta/quota`, `GET /api/v1/admin/connecta/banks`, `POST /api/v1/admin/connecta/test`, `GET /api/v1/admin/connecta/webhook` (status pendaftaran webhook), `POST /api/v1/admin/connecta/dana/account-inquiry` (playground admin). |
 | Sync | `GET /api/v1/admin/sync-status` — worker jalan/tidak, last run, last error. |
@@ -319,7 +321,7 @@ allowlist `ADMIN_GOOGLE_EMAILS`. **Tidak ada UI/endpoint ganti PIN admin**
 ## 5. Tabel database utama
 
 Migrasi auto-apply saat startup backend (`db.Migrate`, tracking
-`schema_migrations`, versi = nama file). 0001–0016.
+`schema_migrations`, versi = nama file). 0001–0017.
 
 | Tabel | Kolom kunci | Relasi / catatan |
 |---|---|---|
@@ -340,6 +342,7 @@ Migrasi auto-apply saat startup backend (`db.Migrate`, tracking
 | `inquiry_usage_daily` (0014) | `member_id` + `usage_date` (PK), `used` | Satu baris per member per tanggal WIB |
 | `email_logs` (0016, v37) | `id`, `member_id` NULL, `kind`, `ref_id` NULL, `subject`, `to_email`, `status` (`sent`/`failed`), `error` NULL | Semua pengiriman email; anti-duplikat pengingat via (`kind`, `ref_id`) |
 | `admin_announcements` (0016, v37) | `id`, `title`, `body`, `created_by` NULL, `status` (`draft`/`sent`), `sent_count`, `failed_count`, `sent_at` NULL | Pengumuman admin ke semua member aktif; hanya bisa dikirim sekali |
+| `email_templates` (0017, v39) | `` `key` `` PK (= nilai `kind` sendMail: `email_verification`, `password_reset`, `order_pending`, `order_paid`, `expiry_reminder_h3`, `expiry_reminder_h1`, `subscription_expired`), `subject`, `body_html`, `updated_at` | Template email yang bisa dicustom admin (`/admin/email-templates`); default premium di-seed migrasi (= fallback di kode); baris hilang/kosong → default kode |
 | `schema_migrations` | `version` | Tracking migrasi yang sudah ter-apply |
 
 ---
@@ -397,7 +400,7 @@ Nilai di bawah ini HANYA nama + arti; isinya ada di server.
 
 ## 7. Alur deploy
 
-Versi terakhir live: **v38** (backend v38 sha256 `13e978fc01f3b9643c62988663ead88a0c9acdc8d21df75d7d7dc7999457b8e6`, frontend v38; BUILD_ID `eXoqy0y4OlB3lfrTeSmxr`). Penomoran:
+Versi terakhir live: **v39** (backend v39 sha256 `3383a5efbb1af2ef9c61574f492042a950107849eb1b6f1ecfd40eb1848695b7`, frontend v39; BUILD_ID `REPteCdQY2RtvTCAbLlxn`). Penomoran:
 `v<angka>` untuk rilis, huruf akhir (`b/c/d`) untuk hotfix.
 
 1. **Bangun lokal** (workspace `~/workspace/mutasi-platform/`):
@@ -490,6 +493,7 @@ catatan proyek; nomor versi terbukti dari script transfer
 | antara v36–v37 (10 Nov, VPS Agent) | Halaman Syarat & Ketentuan + Kebijakan Privasi premium + sitemap (`/terms`, `/privacy`, `sitemap.ts`, `legal-shell.tsx`) + `DEPLOY_RUNBOOK.md`; di-deploy langsung dari VPS (BUILD_ID `ufQxR59nXfRRDbR4ET3mr`) dan di-push VPS Agent ke GitHub (`dea617e`); masuk repo lokal via `git fetch` + rebase saat v37 |
 | v37 | **SMTP + email member**: package `internal/mail` (stdlib `net/smtp` + `crypto/tls`; STARTTLS 587, TLS 465, plain); pengaturan SMTP di panel admin (password terenkripsi AES-256-GCM, tidak pernah dikembalikan ke panel) + `POST /admin/email/test` (400 `smtp_not_configured` bila belum dikonfigurasi); email verifikasi + reset password (fail-open); email tagihan pending (pay-gobiz) + paid (callback Gobiz); pengingat paket H-3/H-1 + notice kedaluwarsa via job 30 menit (anti-duplikat via `email_logs`); pengumuman admin ke semua member aktif (`/admin/announcements`, draf → terkirim sekali); migrasi 0016 (`email_logs`, `admin_announcements`); `GET /api/v1/settings` kini allowlist kunci publik (kunci `smtp_*` tidak bocor) |
 | v38 | **Provider Mailketing API (pengganti SMTP, keputusan user)**: `internal/mail` tambah provider `mailketing_api` — kirim lewat REST API v2 `POST https://api.mailketing.co.id/api/v2/send` (`Authorization: Bearer` token, body `from_name`/`from_email`/`subject`/`recipient`/`content`, satu request = satu penerima; error mapping 401 token tidak valid / 402 kredit habis / 403 domain belum terverifikasi / 422 validasi / 429 rate limit; token tidak pernah muncul di error/log); pengaturan admin tambah `mail_provider` (`smtp` \| `mailketing_api`) + `mailketing_api_key` terenkripsi AES-256-GCM (hanya flag `mailketing_api_key_configured` yang dikembalikan ke panel); alamat/nama pengirim dipakai ulang dari field SMTP; tombol kirim email tes memakai provider aktif (400 `mailketing_api_key_not_configured` bila provider Mailketing aktif tapi key belum diisi); semua alur email (verifikasi, reset, tagihan, pengingat H-3/H-1, pengumuman) lewat provider aktif; kode SMTP tetap ada sebagai pilihan provider; tanpa migrasi baru (hanya settings key) |
+| v39 | **Template email custom admin**: tabel `email_templates` (migrasi 0017, di-seed 7 default premium) — key = nilai `kind` sendMail; admin mengedit subjek + isi HTML dari `/admin/email-templates` (menu Kelola, di sebelah Pengumuman) dengan placeholder `{{nama}}`/`{{paket}}`/`{{jumlah}}`/`{{order_id}}`/`{{tautan}}`/`{{berlaku_sampai}}`/`{{sisa_hari}}` (nilai di-escape HTML; placeholder tak dikenal dibiarkan apa adanya); teks polos diturunkan otomatis dari HTML (tautan jadi "label (url)"); fallback ke default kode bila baris hilang/kosong; tombol reset ke default + pratinjau render dengan data contoh (tanpa kirim email); validasi `{{tautan}}` wajib ada di template verifikasi/reset; endpoint `GET/PUT /api/v1/admin/email-templates[/...]` + `POST .../reset` + `POST .../preview`, diaudit; kerangka `emailShell` tetap sebagai pembungkus baku; email tes tetap baku, pengumuman tetap ditulis admin tiap kali |
 
 ---
 

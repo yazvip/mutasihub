@@ -24,6 +24,7 @@ const NAV = [
       { href: '/admin/plans', label: 'Paket', icon: <IconBox /> },
       { href: '/admin/members', label: 'Member', icon: <IconUsers /> },
       { href: '/admin/announcements', label: 'Pengumuman', icon: <IconMail /> },
+      { href: '/admin/email-templates', label: 'Template Email', icon: <IconMail /> },
     ],
   },
   {
