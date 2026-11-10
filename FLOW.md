@@ -3,8 +3,8 @@
 Peta alur proyek MutasiHub: cek mutasi DANA & BCA realtime untuk bisnis online
 (top-up, deposit, rekonsiliasi pembayaran otomatis) via Connecta B2B Partner API.
 Dokumen ini ditulis dari kode yang sebenarnya (`backend/`, `frontend/`,
-`backend/migrations/0001–0015`) dan laporan audit yang ada — bukan dari ingatan.
-Terakhir diperbarui: 10 November 2026 (versi live v36).
+`backend/migrations/0001–0016`) dan laporan audit yang ada — bukan dari ingatan.
+Terakhir diperbarui: 10 November 2026 (versi live v37).
 
 > Aturan dokumen ini: tidak ada nilai kredensial/secret/key/token/password
 > di sini — hanya NAMA variabel dan placeholder bila perlu.
@@ -319,7 +319,7 @@ allowlist `ADMIN_GOOGLE_EMAILS`. **Tidak ada UI/endpoint ganti PIN admin**
 ## 5. Tabel database utama
 
 Migrasi auto-apply saat startup backend (`db.Migrate`, tracking
-`schema_migrations`, versi = nama file). 0001–0015.
+`schema_migrations`, versi = nama file). 0001–0016.
 
 | Tabel | Kolom kunci | Relasi / catatan |
 |---|---|---|
@@ -331,13 +331,15 @@ Migrasi auto-apply saat startup backend (`db.Migrate`, tracking
 | `mutations` | `id` BIGINT, `member_id` FK, `linked_account_id` FK, `provider`, `tx_date`, `type`, `amount_cents`, `description`, `sender`, `dedup_hash` CHAR(64) | Unik per rekening: `uq_mut_account_dedup (linked_account_id, dedup_hash)` (0007) |
 | `api_keys` | `id`, `member_id` FK, `key_hash` CHAR(64), `key_prefix`, `scope`, `ip_whitelist`, `is_active`, `last_used_at`, `expires_at` NULL (0010) | Maks 5 aktif/member (aturan aplikasi) |
 | `callbacks` | `id` BIGINT, `member_id` FK, `event`, `payload`, `target_url`, `status_code`, `response_body` | Jejak callback Enterprise (tiap percobaan) |
-| `settings` | `setting_key` PK, `value`, `updated_at` | 5 kunci (lihat §6) |
+| `settings` | `setting_key` PK, `value`, `updated_at` | Kunci brand + Gobiz + SMTP v37 (lihat §6) |
 | `audit_logs` | `id` BIGINT, `actor_type`, `actor_id` (ID atau hash SHA-256 email), `action`, `detail`, `ip` | Tanpa PII mentah |
 | `gobiz_orders` | `id`, `member_id` FK, `subscription_id` FK, `amount_cents`, `qr_url`, `status` (`pending`/`paid`/…), `external_id`, `expires_at` (0008, +24 jam) | — |
 | `password_reset_tokens` | `id`, `member_id` FK, `token_hash` CHAR(64), `expires_at`, `used_at` | — |
 | `email_verification_tokens` | `id`, `member_id` FK, `token_hash` CHAR(64), `expires_at`, `used_at` | — |
 | `totp_recovery_codes` (0011) | `id`, `member_id` FK, `code_hash` CHAR(64), `used_at` | 8 kode per enable 2FA; plaintext tidak pernah disimpan |
 | `inquiry_usage_daily` (0014) | `member_id` + `usage_date` (PK), `used` | Satu baris per member per tanggal WIB |
+| `email_logs` (0016, v37) | `id`, `member_id` NULL, `kind`, `ref_id` NULL, `subject`, `to_email`, `status` (`sent`/`failed`), `error` NULL | Semua pengiriman email; anti-duplikat pengingat via (`kind`, `ref_id`) |
+| `admin_announcements` (0016, v37) | `id`, `title`, `body`, `created_by` NULL, `status` (`draft`/`sent`), `sent_count`, `failed_count`, `sent_at` NULL | Pengumuman admin ke semua member aktif; hanya bisa dikirim sekali |
 | `schema_migrations` | `version` | Tracking migrasi yang sudah ter-apply |
 
 ---
@@ -380,12 +382,20 @@ Nilai di bawah ini HANYA nama + arti; isinya ada di server.
 | `logo_url` | (kosong) | URL logo |
 | `accent_color` | `#0B6B4F` | Warna aksen; **nilai live saat ini `#047857` (emerald, diputuskan v31)** |
 | `gobiz_enabled` | `1` | Saklar pembayaran Gobiz; **nilai live saat ini `0`** (lihat §9) |
+| `smtp_enabled` (v37) | `0` | Saklar pengiriman email; `1` = email aktif (butuh host + alamat pengirim) |
+| `smtp_host` (v37) | (kosong) | Host SMTP, mis. `smtp.gmail.com` |
+| `smtp_port` (v37) | (kosong → 587) | Port SMTP: 587 STARTTLS, 465 TLS |
+| `smtp_username` (v37) | (kosong) | Username SMTP (boleh kosong = tanpa auth) |
+| `smtp_password` (v37) | (kosong) | Password SMTP — disimpan `enc:` + AES-256-GCM; **tidak pernah dikembalikan ke panel** (hanya flag `smtp_password_configured`); kosong saat simpan = pertahankan yang lama |
+| `smtp_tls_mode` (v37) | `starttls` | `none` / `starttls` / `tls` |
+| `smtp_from_name` (v37) | `MutasiHub` | Nama pengirim di email member |
+| `smtp_from_email` (v37) | (kosong) | Alamat pengirim (wajib berisi `@` bila diisi) |
 
 ---
 
 ## 7. Alur deploy
 
-Versi terakhir live: **v36** (backend v34, frontend v36; BUILD_ID `f8efRenS2-nxG-2MU19RY`). Penomoran:
+Versi terakhir live: **v37** (backend v37 sha256 `d7526752a1dc9d309e30729dd8350558dee07d16bd0b85b433b371ee995b733e`, frontend v37; BUILD_ID `BynPScxiK_8PNtmwHCcf0`). Penomoran:
 `v<angka>` untuk rilis, huruf akhir (`b/c/d`) untuk hotfix.
 
 1. **Bangun lokal** (workspace `~/workspace/mutasi-platform/`):
@@ -420,7 +430,7 @@ Versi terakhir live: **v36** (backend v34, frontend v36; BUILD_ID `f8efRenS2-nxG
 7. **Verifikasi live:** healthz 200 + `db:true`, halaman kunci 200
    (`/login`, `/member/*`, `/admin/*`, `/docs`), skenario yang diubah
    dites end-to-end dengan akun tes, lalu akun tes **dihapus** (member
-   live kembali 5).
+   live kembali 6).
 8. **Aturan file hasil deploy:** `cp -r <src> <dest>` bila dest SUDAH ADA
    menyarangkan src ke dalam dest — pakai `cp -r <src>/. <dest>/` atau
    pastikan dest belum ada.
@@ -475,6 +485,8 @@ catatan proyek; nomor versi terbukti dari script transfer
 | v35 | Redesign inquiry Playground (komponen `inquiry-premium.tsx`); inquiry member + admin terverifikasi live |
 | v35b | Hapus tab "Inquiry Rekening" dari nav member + hapus halaman `app/member/inquiry/`; redirect 307 `/member/inquiry` → `/member/playground` |
 | v36 | Redesign premium daftar Rekening terhubung, murni CSS (scope `.member-shell.accounts-card`; `page.tsx` tidak diubah) |
+| antara v36–v37 (10 Nov, VPS Agent) | Halaman Syarat & Ketentuan + Kebijakan Privasi premium + sitemap (`/terms`, `/privacy`, `sitemap.ts`, `legal-shell.tsx`) + `DEPLOY_RUNBOOK.md`; di-deploy langsung dari VPS (BUILD_ID `ufQxR59nXfRRDbR4ET3mr`) dan di-push VPS Agent ke GitHub (`dea617e`); masuk repo lokal via `git fetch` + rebase saat v37 |
+| v37 | **SMTP + email member**: package `internal/mail` (stdlib `net/smtp` + `crypto/tls`; STARTTLS 587, TLS 465, plain); pengaturan SMTP di panel admin (password terenkripsi AES-256-GCM, tidak pernah dikembalikan ke panel) + `POST /admin/email/test` (400 `smtp_not_configured` bila belum dikonfigurasi); email verifikasi + reset password (fail-open); email tagihan pending (pay-gobiz) + paid (callback Gobiz); pengingat paket H-3/H-1 + notice kedaluwarsa via job 30 menit (anti-duplikat via `email_logs`); pengumuman admin ke semua member aktif (`/admin/announcements`, draf → terkirim sekali); migrasi 0016 (`email_logs`, `admin_announcements`); `GET /api/v1/settings` kini allowlist kunci publik (kunci `smtp_*` tidak bocor) |
 
 ---
 
@@ -491,8 +503,15 @@ Jujur, dari konteks proyek (bukan tebakan):
 - **Google OAuth kosong** (client ID/secret kosong) → `GET /api/v1/auth/google`
   503. Redirect URI yang harus didaftarkan:
   `https://mutasi.rajacek.com/api/v1/auth/google/callback`.
-- **SMTP belum ada** — token verifikasi email & reset password tersimpan
-  benar, tapi email tidak terkirim.
+- **SMTP sudah ada (v37) tapi belum dikonfigurasi** — pengaturan ada di
+  panel admin (host, port, mode TLS, username, password terenkripsi,
+  nama + alamat pengirim) + tombol kirim email tes. Selama belum diisi,
+  email verifikasi, reset password, tagihan, dan pengingat TIDAK
+  terkirim (fail-open: register/order tetap sukses). Yang butuh user:
+  isi kredensial SMTP di panel lalu tekan kirim email tes. Catatan
+  verifikasi: endpoint tes mengembalikan 401 tanpa sesi admin (route
+  ada + auth jalan); perilaku 400 `smtp_not_configured` tanpa
+  konfigurasi belum terbukti live karena butuh sesi admin.
 - **OVO ditunda** — tidak ada endpoint, tabel, atau UI OVO.
 - **Disburse belum dibangun** (sengaja, lihat §1) — sumber dana belum
   terbukti; tes pembuktian Rp10.000 menunggu keputusan user.
