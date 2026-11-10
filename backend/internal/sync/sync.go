@@ -217,7 +217,9 @@ func (s *Syncer) syncDANA(ctx context.Context, a *accountRow, phone string) erro
 		if err != nil || !bound {
 			return nil
 		}
-		_, _ = s.store.DB.ExecContext(ctx, `UPDATE linked_accounts SET status='active' WHERE id=?`, a.ID)
+		// v34: aktivasi self-heal = otorisasi sukses; catat tanggal
+		// pertama (COALESCE menjaga bila webhook sudah mencatat).
+		_, _ = s.store.DB.ExecContext(ctx, `UPDATE linked_accounts SET status='active', authorized_at=COALESCE(authorized_at, NOW()) WHERE id=?`, a.ID)
 		a.Status = "active"
 	}
 	// Paginasi: ambil halaman demi halaman sampai halaman kosong atau
@@ -347,8 +349,9 @@ func (s *Syncer) syncBCA(ctx context.Context, a *accountRow, accountNo string) e
 	}
 	// BCA tidak punya langkah otorisasi lanjutan: sinkronisasi yang
 	// berhasil = rekening sudah bisa dibaca, tandai aktif.
+	// v34: catat tanggal otorisasi pertama (COALESCE menjaga yang lama).
 	if a.Status == "pending" {
-		_, _ = s.store.DB.ExecContext(ctx, `UPDATE linked_accounts SET status='active' WHERE id=?`, a.ID)
+		_, _ = s.store.DB.ExecContext(ctx, `UPDATE linked_accounts SET status='active', authorized_at=COALESCE(authorized_at, NOW()) WHERE id=?`, a.ID)
 	}
 	return nil
 }

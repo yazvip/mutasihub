@@ -7,14 +7,21 @@ import {
   Button,
   Card,
   ErrorBanner,
-  Field,
   PageHeading,
 } from '../../../components/ui';
+import {
+  InquiryBankForm,
+  InquiryPremiumShell,
+  type InquiryQuota,
+} from '../../../components/inquiry-premium';
 
 // Playground admin — uji jalur Connecta dari panel admin.
 // Live: kuota, tes koneksi, daftar bank, inquiry (endpoint admin, tanpa
 // gate paket). Demo: respons palsu yang sudah disiapkan, tanpa sentuh
 // provider.
+// v35: bagian inquiry memakai InquiryPremiumShell (layout referensi user:
+// header badge + chip endpoint, kartu kuota, kartu form, kartu hasil
+// Card/JSON Raw, promo Docs API). Tool Kuota/Tes/Banks tidak berubah.
 
 const DEMO_QUOTA = {
   success: true,
@@ -43,6 +50,22 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: 'inquiry', label: 'Inquiry Rekening' },
 ];
 
+// Parser defensif untuk GET /api/v1/admin/connecta/quota (raw envelope
+// Connecta /b2b/quota — bentuknya tidak dikontrak seketat endpoint lain).
+function parseAdminQuota(d: any): InquiryQuota {
+  const o = d?.data ?? d ?? {};
+  const status = typeof o?.status === 'string' ? o.status : '—';
+  const expiresAt =
+    typeof o?.expired_at === 'string'
+      ? o.expired_at
+      : typeof o?.expires_at === 'string'
+        ? o.expires_at
+        : null;
+  const maxDana = typeof o?.max_dana_accounts === 'number' ? o.max_dana_accounts : null;
+  const maxBca = typeof o?.max_bca_accounts === 'number' ? o.max_bca_accounts : null;
+  return { kind: 'admin', status, expiresAt, maxDana, maxBca, isDemo: o?.is_demo === true };
+}
+
 export default function AdminPlaygroundPage() {
   const [mode, setMode] = useState<'live' | 'demo'>('live');
   const [tool, setTool] = useState<Tool>('quota');
@@ -53,6 +76,9 @@ export default function AdminPlaygroundPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [quota, setQuota] = useState<InquiryQuota>({ kind: 'loading' });
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [queryAt, setQueryAt] = useState<Date | null>(null);
 
   useEffect(() => {
     loadBanks('/api/v1/admin/connecta/banks').then((list) => {
@@ -61,9 +87,23 @@ export default function AdminPlaygroundPage() {
     });
   }, []);
 
+  useEffect(() => {
+    if (tool !== 'inquiry') return;
+    if (mode === 'demo') {
+      setQuota(parseAdminQuota(DEMO_QUOTA));
+      return;
+    }
+    setQuota({ kind: 'loading' });
+    apiGet<any>('/api/v1/admin/connecta/quota')
+      .then((d) => setQuota(parseAdminQuota(d)))
+      .catch(() => setQuota({ kind: 'off', message: 'Kuota Connecta tidak dapat dimuat.' }));
+  }, [tool, mode]);
+
   function reset() {
     setResult(null);
     setError(null);
+    setLatencyMs(null);
+    setQueryAt(null);
   }
 
   async function runLive() {
@@ -74,11 +114,15 @@ export default function AdminPlaygroundPage() {
       if (tool === 'quota') d = await apiGet<any>('/api/v1/admin/connecta/quota');
       else if (tool === 'test') d = await apiPost<any>('/api/v1/admin/connecta/test', {});
       else if (tool === 'banks') d = await apiGet<any>('/api/v1/admin/connecta/banks');
-      else
+      else {
+        const t0 = performance.now();
         d = await apiPost<any>('/api/v1/admin/connecta/dana/account-inquiry', {
           bank_code: bankCode,
           account_number: accountNumber.trim(),
         });
+        setLatencyMs(performance.now() - t0);
+        setQueryAt(new Date());
+      }
       setResult(d);
     } catch (err) {
       setError(friendlyError(err));
@@ -90,11 +134,18 @@ export default function AdminPlaygroundPage() {
   function runDemo(e?: FormEvent) {
     e?.preventDefault();
     reset();
+    const t0 = performance.now();
     if (tool === 'quota') setResult(DEMO_QUOTA);
     else if (tool === 'test') setResult(DEMO_TEST);
     else if (tool === 'banks') setResult(DEMO_BANKS);
-    else setResult(DEMO_INQUIRY);
+    else {
+      setResult(DEMO_INQUIRY);
+      setLatencyMs(performance.now() - t0);
+      setQueryAt(new Date());
+    }
   }
+
+  const inquiryResult = result?.data ?? null;
 
   return (
     <>
@@ -130,42 +181,35 @@ export default function AdminPlaygroundPage() {
       <ErrorBanner message={error} onClose={() => setError(null)} />
 
       {tool === 'inquiry' ? (
-        <Card title={`Inquiry Rekening — ${mode === 'live' ? 'Live' : 'Demo'}`}>
-          <form
-            onSubmit={(e) => {
-              if (mode === 'live') {
-                e.preventDefault();
-                runLive();
-              } else {
-                runDemo(e);
-              }
-            }}
-          >
-            <div className="form-grid">
-              <Field label="Bank">
-                <select value={bankCode} onChange={(e) => setBankCode(e.target.value)} disabled={!loaded}>
-                  {banks.map((b) => (
-                    <option key={b.code} value={b.code}>{b.name} ({b.code})</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Nomor rekening" hint={mode === 'live' ? 'Dikirim ke Connecta apa adanya.' : 'Demo: nomor apa pun menampilkan Budi Santoso.'}>
-                <input
-                  required
-                  inputMode="numeric"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                  placeholder="mis. 1234567890"
-                />
-              </Field>
-            </div>
-            <div className="row-actions">
-              <Button type="submit" disabled={busy || !loaded}>
-                {busy ? 'Memeriksa…' : 'Jalankan Inquiry'}
-              </Button>
-            </div>
-          </form>
-        </Card>
+        <InquiryPremiumShell
+          endpoint="/api/v1/admin/connecta/dana/account-inquiry"
+          quota={quota}
+          bankCount={banks.length}
+          form={(
+            <InquiryBankForm
+              banks={banks}
+              bankCode={bankCode}
+              onBankCodeChange={setBankCode}
+              accountNumber={accountNumber}
+              onAccountNumberChange={setAccountNumber}
+              onSubmit={(e) => {
+                if (mode === 'live') {
+                  e.preventDefault();
+                  runLive();
+                } else {
+                  runDemo(e);
+                }
+              }}
+              busy={busy}
+              loaded={loaded}
+              accountHint={mode === 'live' ? 'Dikirim ke Connecta apa adanya.' : 'Demo: nomor apa pun menampilkan Budi Santoso.'}
+            />
+          )}
+          result={inquiryResult}
+          rawResult={result}
+          latencyMs={latencyMs}
+          queryAt={queryAt}
+        />
       ) : (
         <Card title={`${TOOLS.find((t) => t.id === tool)?.label} — ${mode === 'live' ? 'Live' : 'Demo'}`}>
           <p className="muted">
@@ -181,7 +225,7 @@ export default function AdminPlaygroundPage() {
         </Card>
       )}
 
-      {result !== null && result !== undefined && (
+      {tool !== 'inquiry' && result !== null && result !== undefined && (
         <Card title="Respons mentah">
           <pre className="raw-json">{JSON.stringify(result, null, 2)}</pre>
         </Card>

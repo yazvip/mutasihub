@@ -82,7 +82,9 @@ func (s *Server) handleConnectaWebhook(w http.ResponseWriter, r *http.Request) {
 		if isBindingSuccessStatus(body.Status) {
 			if body.ClientRef != "" && body.Phone != "" {
 				if accountID, ok := s.findDANAAccount(ctx, body.ClientRef, body.Phone, "", "pending"); ok {
-					_, _ = s.store.DB.ExecContext(ctx, `UPDATE linked_accounts SET status='active' WHERE id=?`, accountID)
+					// v34: catat tanggal otorisasi pertama; COALESCE menjaga
+					// tanggal pertama bila otorisasi diulang.
+					_, _ = s.store.DB.ExecContext(ctx, `UPDATE linked_accounts SET status='active', authorized_at=COALESCE(authorized_at, NOW()) WHERE id=?`, accountID)
 				} else {
 					s.log.Printf("webhook: dana binding client_ref=%s: nomor tidak cocok dengan akun DANA pending mana pun, tidak diaktifkan", body.ClientRef)
 				}

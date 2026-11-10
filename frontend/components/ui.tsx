@@ -161,11 +161,15 @@ export function Modal({
   subtitle,
   onClose,
   children,
+  // v32: strip warna 4px di paling atas modal (sebelum judul). Opsional —
+  // tanpa prop ini modal tampil persis seperti sebelumnya.
+  topStripColor,
 }: {
   title: string;
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
+  topStripColor?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -189,6 +193,13 @@ export function Modal({
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
+        {topStripColor && (
+          <div
+            className="modal-top-strip"
+            aria-hidden="true"
+            style={{ backgroundColor: topStripColor }}
+          />
+        )}
         <div className="modal-head">
           <h3>{title}</h3>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Tutup">
@@ -207,7 +218,10 @@ export function Field({
   children,
   hint,
 }: {
-  label: string;
+  // v32: label boleh ReactNode agar pemakaian tertentu bisa menempelkan
+  // badge (mis. Read-Only / AES-256 di samping label PIN). Semua pemakaian
+  // lama yang mengirim string tetap jalan.
+  label: ReactNode;
   children: ReactNode;
   hint?: string;
 }) {

@@ -21,7 +21,8 @@ export function formatAmount(n: number | null | undefined): string {
 
 export function formatDateWIB(
   iso: string | null | undefined,
-  withTime = true
+  withTime = true,
+  withSeconds = false
 ): string {
   if (!iso) return '-';
   const d = new Date(iso);
@@ -35,6 +36,26 @@ export function formatDateWIB(
   if (withTime) {
     opts.hour = '2-digit';
     opts.minute = '2-digit';
+    if (withSeconds) opts.second = '2-digit';
+  }
+  // withSeconds: jam pakai ':' (bukan '.' ala id-ID) — contoh
+  // "09 Nov 2026, 06:35:12 WIB". Jalur withTime tanpa detik dibiarkan
+  // apa adanya agar pemanggil lain tidak berubah.
+  if (withTime && withSeconds) {
+    const dateStr = new Intl.DateTimeFormat('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(d);
+    const timeStr = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d);
+    return `${dateStr}, ${timeStr} WIB`;
   }
   return new Intl.DateTimeFormat('id-ID', opts).format(d) + (withTime ? ' WIB' : '');
 }

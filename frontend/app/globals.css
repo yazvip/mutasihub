@@ -1146,286 +1146,703 @@ html, body { overflow-x: clip; }
   table.mobile-card-table td[data-label="Provider"] br { display: none; }
 }
 
-/* ========================================================
-   v32: Fintech/Enterprise Premium Polish (Member Panel)
-   ======================================================== */
-
-/* Indicator pulse animation */
-@keyframes pulse-dot {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-}
-
-.live-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 10px;
-  background: #ecfdf5;
+/* ===== v31d: kartu progres premium saat tambah rekening (busy) ===== */
+/* Menggantikan teks polos v31c. Semua aturan di-scope .member-shell agar
+   tidak bocor ke panel admin; nama keyframes ber-prefix mh- agar unik. */
+.member-shell .progress-card {
+  margin-top: 12px;
+  padding: 12px 14px;
   border: 1px solid #a7f3d0;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #065f46;
-  letter-spacing: 0.02em;
-}
-
-.live-indicator .dot {
-  width: 7px;
-  height: 7px;
-  background: #10b981;
-  border-radius: 50%;
-  animation: pulse-dot 2s infinite;
-}
-
-/* Stat card KPI enhancement */
-.member-shell .stat {
-  position: relative;
-  overflow: hidden;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 18px 20px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 4px 12px rgba(0,0,0,0.03);
-}
-
-.member-shell .stat:hover {
-  border-color: #cbd5e1;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.05);
-}
-
-.member-shell .stat-value {
-  font-family: var(--font-jakarta), system-ui, sans-serif;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-/* Bank Account Cards styling */
-.bank-card {
-  position: relative;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 18px;
-  transition: all 0.2s ease;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-}
-
-.bank-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.04);
-}
-
-.bank-card.dana-card {
-  border-left: 4px solid #118eea;
-}
-
-.bank-card.bca-card {
-  border-left: 4px solid #005696;
-}
-
-.bank-badge-dana {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 700;
-  font-size: 11px;
-  padding: 2px 7px;
-  background: #e0f2fe;
-  color: #0369a1;
-  border-radius: 6px;
-  letter-spacing: 0.04em;
-}
-
-.bank-badge-bca {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 700;
-  font-size: 11px;
-  padding: 2px 7px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  border-radius: 6px;
-  letter-spacing: 0.04em;
-}
-
-/* Interactive Table Rows & Badges */
-.mobile-card-table tbody tr {
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.mobile-card-table tbody tr:hover {
-  background-color: #f8fafc;
-}
-
-.amount-pill-pos {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
+  border-radius: 12px;
   background: #ecfdf5;
-  color: #047857;
-  border-radius: 6px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+}
+.member-shell .progress-row { display: flex; gap: 10px; align-items: flex-start; }
+.member-shell .progress-spinner {
+  flex: none;
+  width: 18px; height: 18px; margin-top: 1px;
+  border-radius: 50%;
+  border: 2.5px solid #a7f3d0;
+  border-top-color: #047857;
+  animation: mh-spin 0.8s linear infinite;
+}
+@keyframes mh-spin { to { transform: rotate(360deg); } }
+.member-shell .progress-text { min-width: 0; }
+.member-shell .progress-title {
+  font-size: 13.5px; font-weight: 600; color: #022c22; line-height: 1.4;
+}
+.member-shell .progress-sub {
+  font-size: 12.5px; color: #065f46; line-height: 1.5; margin-top: 1px;
+}
+.member-shell .progress-track {
+  margin-top: 10px; height: 3px; border-radius: 999px;
+  background: #d1fae5; overflow: hidden;
+}
+.member-shell .progress-bar {
+  height: 100%; width: 40%; border-radius: 999px; background: #047857;
+  /* Ping-pong 0% -> 150% (dari lebar bar sendiri): bar selebar 40% track
+     selalu tampil penuh di dalam track, tidak pernah hilang di luar tepi. */
+  animation: mh-progress-slide 1.2s ease-in-out infinite alternate;
+}
+@keyframes mh-progress-slide {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(150%); }
 }
 
-.amount-pill-neg {
+/* ===== v31e: ikon tab + tombol submit premium di modal Tambah Rekening ===== */
+/* Semua aturan di-scope .member-shell agar tidak bocor ke panel admin.
+   Blok ini di akhir file supaya menang atas .member-shell .btn-primary
+   yang spesifikasinya sama. */
+.member-shell .tabs-add-account .tab {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  background: #f8fafc;
-  color: #475569;
-  border-radius: 6px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  gap: 8px;
+  min-height: 46px;
+  padding: 8px 16px 8px 10px;
+  white-space: nowrap;
 }
-
-/* Detail Drawer (Slide-over) */
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
-  animation: fadeIn 0.2s ease;
-}
-
-.drawer-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  max-width: 440px;
-  background: #ffffff;
-  z-index: 1001;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
-  display: flex;
-  flex-direction: column;
-  animation: slideLeft 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideLeft {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-.drawer-head {
-  padding: 20px 24px;
-  border-bottom: 1px solid #f1f5f9;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.drawer-body {
-  padding: 24px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.drawer-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid #f8fafc;
-  font-size: 13.5px;
-}
-
-.drawer-row .label {
+.member-shell .tabs-add-account .tab-icon {
+  flex: none;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  /* Tile nonaktif putih + hairline: bg tab #f1f5f9 sama dengan tile bila
+     memakai #f1f5f9, sehingga tile tidak terlihat — putih memberi kontras. */
+  background: #fff;
+  border: 1px solid #e2e8f0;
   color: #64748b;
 }
-
-.drawer-row .val {
-  font-weight: 600;
-  color: #0f172a;
-  text-align: right;
-  max-width: 250px;
-  word-break: break-word;
-}
-
-/* Onboarding checklist */
-.onboarding-banner {
-  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
-  color: #ffffff;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 10px 25px -5px rgba(4, 120, 87, 0.2);
-}
-
-.onboarding-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.onboarding-step {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  padding: 12px 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: #f0fdf4;
-}
-
-.onboarding-step.done {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.onboarding-step .check-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.onboarding-step.done .check-icon {
-  background: #ffffff;
+.member-shell .tabs-add-account .tab.active .tab-icon {
+  background: #d1fae5;
+  border-color: transparent;
   color: #047857;
 }
+.member-shell .tabs-add-account .tab-icon svg { display: block; }
 
+/* Tombol submit premium: menimpa .btn-primary khusus di modal ini lewat
+   className (komponen Button tidak diubah). Specificity (0,3,0) mengalahkan
+   .btn-primary:disabled (0,2,0) agar state nonaktif tetap bernuansa
+   emerald, bukan abu-abu kusam. */
+.member-shell .btn-add-premium {
+  width: 100%;
+  height: 46px;
+  padding: 0 18px;
+  font-size: 15px;
+  font-weight: 700;
+  background: #047857;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(2, 44, 34, 0.12), 0 10px 24px -10px rgba(4, 120, 87, 0.5);
+  transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.member-shell .btn-add-premium:hover { background: #065f46; transform: translateY(-1px); }
+.member-shell .btn-add-premium:active { transform: translateY(0) scale(0.99); }
+.member-shell .btn-add-premium:focus-visible { outline: 2px solid #047857; outline-offset: 2px; }
+.member-shell .btn-add-premium:disabled {
+  opacity: 0.75;
+  background: #047857;
+  color: #fff;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 1px 2px rgba(2, 44, 34, 0.12);
+}
+.member-shell .btn-add-premium:disabled:hover { background: #047857; transform: none; }
+.member-shell .btn-add-premium svg { flex: none; }
+.member-shell .btn-add-spinner {
+  flex: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: mh-spin 0.8s linear infinite;
+}
 
-/* --- Premium account list (Rekening terhubung) --- */
-.accounts-table .account-row td { vertical-align: middle; }
-.provider-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: 999px;
-  background: #f1f5f9; color: #334155;
-  font-size: 13px; font-weight: 600; letter-spacing: 0.01em;
+/* ===== v32: warna channel dinamis di modal Tambah Rekening ===== */
+/* DANA Sky Blue #108ee9, BCA Navy Blue #005baa. Variabel --ch* disetel
+   inline pada .add-modal dari tab aktif; semua elemen bertema memakai
+   var() + transition sehingga perpindahan tab bertransisi mulus.
+   Semua aturan di-scope .member-shell .add-modal (spesifisitas lebih
+   tinggi dari blok v31d/v31e) agar menang tanpa mengubah komponen bersama
+   dan tanpa bocor ke panel admin. Strip atas dirender komponen Modal
+   (prop topStripColor) agar berada di atas judul; class .modal-top-strip
+   hanya muncul bila prop itu diisi. */
+.modal-top-strip {
+  margin: -20px -20px 16px;
+  height: 4px;
+  border-radius: 16px 16px 0 0;
+  transition: background-color 0.3s ease;
 }
-.account-number {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 14px; font-weight: 600; color: #0f172a; letter-spacing: 0.02em;
+/* Segmented tabs: touch target 48px + tema channel pada tab aktif. */
+.member-shell .add-modal .tabs-add-account .tab {
+  min-height: 48px;
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
 }
-.account-label { font-size: 12px; }
-.balance-amount { font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
-.actions-cell .account-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.btn-sm.btn, .btn.btn-sm { padding: 6px 12px; font-size: 12px; line-height: 1.2; border-radius: 8px; }
-.status-badges { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-@media (max-width: 768px) {
-  .actions-cell .account-actions { width: 100%; justify-content: flex-start; }
-  .account-number { font-size: 13px; }
+.member-shell .add-modal .tabs-add-account .tab.active {
+  background: var(--ch, #047857);
+  border-color: var(--ch, #047857);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
+}
+.member-shell .add-modal .tabs-add-account .tab.active .tab-icon {
+  background: var(--ch-soft, #d1fae5);
+  border-color: transparent;
+  color: var(--ch, #047857);
+}
+.member-shell .add-modal .tabs-add-account .tab-icon {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+/* Tombol submit premium mengikuti warna channel; hover memakai filter
+   (bukan background) karena background berasal dari variabel. */
+.member-shell .add-modal .btn-add-premium {
+  background: var(--ch, #047857);
+  box-shadow: 0 1px 2px rgba(2, 44, 34, 0.12), 0 10px 24px -10px rgba(15, 23, 42, 0.45);
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.member-shell .add-modal .btn-add-premium:hover { background: var(--ch, #047857); filter: brightness(0.92); transform: translateY(-1px); }
+.member-shell .add-modal .btn-add-premium:focus-visible { outline: 2px solid var(--ch, #047857); outline-offset: 2px; }
+.member-shell .add-modal .btn-add-premium:disabled { background: var(--ch, #047857); }
+.member-shell .add-modal .btn-add-premium:disabled:hover { background: var(--ch, #047857); filter: none; }
+/* State sukses tombol: hijau sukses (universal), bukan warna channel. */
+.member-shell .add-modal .btn-add-premium.btn-success { background: #047857; }
+.member-shell .add-modal .btn-add-premium.btn-success:hover { background: #047857; filter: none; transform: none; }
+/* Kartu progres (BusyProgressCard) mengikuti warna channel. */
+.member-shell .add-modal .progress-card {
+  border-color: var(--ch-border, #a7f3d0);
+  background: var(--ch-soft, #ecfdf5);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+.member-shell .add-modal .progress-spinner { border-color: var(--ch-border, #a7f3d0); border-top-color: var(--ch, #047857); }
+.member-shell .add-modal .progress-title { color: var(--ch-dark, #022c22); }
+.member-shell .add-modal .progress-sub { color: var(--ch-dark, #065f46); opacity: 0.8; }
+.member-shell .add-modal .progress-track { background: var(--ch-border, #d1fae5); }
+.member-shell .add-modal .progress-bar { background: var(--ch, #047857); }
+/* Input group prefix +62 (DANA) + input monospace. */
+.member-shell .add-modal .input-group { display: flex; align-items: stretch; }
+.member-shell .add-modal .input-prefix {
+  flex: none;
+  display: inline-flex; align-items: center;
+  padding: 0 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
+  font-size: 14px; font-weight: 600; color: #475569;
+  transition: border-color 0.3s ease;
+}
+.member-shell .add-modal .input-group input {
+  border-radius: 0 10px 10px 0;
+  min-width: 0;
+}
+.member-shell .add-modal .input-group:focus-within .input-prefix { border-color: var(--ch, #047857); }
+.member-shell .add-modal .mono-input { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; }
+/* Eye toggle PIN (di dalam .field label; tombol type=button). */
+.member-shell .add-modal .input-with-eye { position: relative; }
+.member-shell .add-modal .input-with-eye input { padding-right: 44px; }
+.member-shell .add-modal .eye-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; color: #64748b;
+  border-radius: 8px; cursor: pointer; padding: 0;
+}
+.member-shell .add-modal .eye-toggle:hover { background: #f1f5f9; color: #0f172a; }
+.member-shell .add-modal .eye-toggle:focus-visible { outline: 2px solid var(--ch, #047857); outline-offset: 1px; }
+/* Badge keamanan di samping label PIN KlikBCA. */
+.member-shell .add-modal .pin-label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.member-shell .add-modal .pin-badges { display: inline-flex; gap: 4px; }
+.member-shell .add-modal .pin-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10.5px; font-weight: 600; line-height: 1;
+  padding: 4px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--ch-border, #a7f3d0);
+  background: var(--ch-soft, #ecfdf5);
+  color: var(--ch-dark, #065f46);
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+/* Banner jaminan privasi (tab BCA). */
+.member-shell .add-modal .privacy-banner {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  border: 1px solid var(--ch-border, #a7f3d0);
+  background: var(--ch-soft, #ecfdf5);
+  border-radius: 12px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+.member-shell .add-modal .privacy-icon { flex: none; color: var(--ch-dark, #065f46); margin-top: 1px; }
+.member-shell .add-modal .privacy-banner p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--ch-dark, #065f46); }
+
+/* ===== v36: daftar Rekening terhubung premium (redesign) ===== */
+/* Menggantikan v33: tiap rekening jadi kartu putih premium sendiri
+   (rounded 16px, border hairline, shadow halus) di atas latar panel
+   #fafbfc — kartu luar Card dibuat flat (tanpa kotak) agar daftar
+   terasa seperti list modern, bukan tabel. HP <=640px: hierarki
+   tile 36px + provider + pill status di baris atas, nomor mono besar,
+   saldo besar tabular, tanggal sekunder, aksi di footer ber-divider.
+   Desktop >=641px: kolom REKENING / SALDO / STATUS / AKSI tetap sejajar
+   seperti tabel, tapi tiap baris tetap kartu. Semua aturan di-scope
+   .member-shell .accounts-card agar tidak bocor ke panel admin.
+   Perilaku dipertahankan: Otorisasi DANA (openBinding), Hapus
+   (removeAccount + confirm), badge status + 'Sync dijeda'. */
+
+/* Kartu luar flat: judul + pill hitungan + tombol Tambah duduk langsung
+   di latar panel; kartu rekening yang jadi kotak putih. */
+.member-shell .accounts-card {
+  background: transparent; border: 0; box-shadow: none;
+  padding: 0; margin-bottom: 20px;
+}
+.member-shell .accounts-card .card-head { margin-bottom: 14px; }
+
+/* Header kartu: pill hitungan + tombol Tambah premium. */
+.member-shell .accounts-card .card-actions { align-items: center; }
+.member-shell .accounts-card .acct-count {
+  display: inline-flex; align-items: center;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+  color: #475569; background: #fff;
+  border: 1px solid #e2e8f0; border-radius: 999px; padding: 7px 11px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.member-shell .accounts-card .btn-accounts-add,
+.member-shell .btn-accounts-add {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: #047857; color: #fff; font-weight: 700;
+  border-radius: 12px; padding: 11px 16px; min-height: 44px;
+  box-shadow: 0 1px 2px rgba(2, 44, 34, 0.12), 0 8px 20px -8px rgba(4, 120, 87, 0.45);
+  transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.member-shell .accounts-card .btn-accounts-add:hover,
+.member-shell .btn-accounts-add:hover { background: #065f46; transform: translateY(-1px); }
+.member-shell .accounts-card .btn-accounts-add:focus-visible,
+.member-shell .btn-accounts-add:focus-visible { outline: 2px solid #047857; outline-offset: 2px; }
+/* HP <=560px: header kartu membungkus (aturan v31) — tombol Tambah
+   memenuhi baris aksinya sendiri agar mudah dijangkau. */
+@media (max-width: 560px) {
+  .member-shell .accounts-card .card-actions { flex: 1 1 100%; }
+  .member-shell .accounts-card .btn-accounts-add { flex: 1 1 auto; justify-content: center; }
+}
+
+/* Header kolom — desktop saja, sejajar padding kartu baris. */
+.member-shell .accounts-card .account-list-head { display: none; }
+@media (min-width: 641px) {
+  .member-shell .accounts-card .account-list-head {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) 150px 170px auto;
+    gap: 16px; align-items: center;
+    padding: 2px 18px 10px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .member-shell .accounts-card .account-list-head .num { text-align: right; }
+}
+
+/* Daftar: kolom kartu dengan jarak 12px. */
+.member-shell .accounts-card .account-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+/* Kartu rekening premium: putih, border hairline, shadow halus. */
+.member-shell .accounts-card .account-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon id status"
+    "balance balance balance"
+    "actions actions actions";
+  gap: 10px 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.12);
+}
+@media (min-width: 641px) {
+  .member-shell .accounts-card .account-row {
+    grid-template-columns: 36px minmax(0, 1fr) 150px 170px auto;
+    grid-template-areas: "icon id balance status actions";
+    gap: 16px; align-items: center;
+    padding: 16px 18px;
+  }
+}
+@media (min-width: 641px) and (hover: hover) {
+  .member-shell .accounts-card .account-row:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 12px 28px -16px rgba(15, 23, 42, 0.16);
+  }
+}
+
+/* Tile ikon channel 36px (ikon SVG dipakai ulang dari v31e). */
+.member-shell .accounts-card .acct-icon {
+  grid-area: icon;
+  width: 36px; height: 36px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: var(--ch-soft, #e8f4fd);
+  color: var(--ch, #108ee9);
+}
+
+/* Identitas rekening: provider + nomor mono besar + tanggal sekunder. */
+.member-shell .accounts-card .acct-id { grid-area: id; min-width: 0; }
+.member-shell .accounts-card .acct-provider {
+  font-size: 15px; font-weight: 800; line-height: 1.35; letter-spacing: -0.01em; color: #0f172a;
+}
+.member-shell .accounts-card .acct-number {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px; font-weight: 600; letter-spacing: 0.01em; color: #0f172a; margin-top: 3px;
+  overflow-wrap: break-word;
+}
+.member-shell .accounts-card .acct-label { font-size: 12px; color: var(--muted); margin-top: 3px; }
+/* v34: tanggal tambah + otorisasi — meta kecil abu-abu di bawah nomor. */
+.member-shell .accounts-card .acct-dates { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+
+/* Saldo: HP label kecil di atas nilai besar; desktop rata kanan tanpa label. */
+.member-shell .accounts-card .acct-balance {
+  grid-area: balance; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0;
+}
+.member-shell .accounts-card .acct-meta-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;
+}
+.member-shell .accounts-card .acct-balance-value {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: #0f172a;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+@media (min-width: 641px) {
+  .member-shell .accounts-card .acct-meta-label { display: none; }
+  .member-shell .accounts-card .acct-balance { flex-direction: row; align-items: baseline; justify-content: flex-end; }
+  .member-shell .accounts-card .acct-balance-value { font-size: 16px; font-weight: 700; }
+}
+
+/* Status: pill di kanan baris atas (HP) / kolom sendiri (desktop). */
+.member-shell .accounts-card .acct-status { grid-area: status; display: flex; align-items: flex-start; justify-content: flex-end; min-width: 0; }
+.member-shell .accounts-card .acct-status .status-badges { display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+
+/* Aksi: footer ber-divider hairline; Otorisasi memenuhi lebar di HP,
+   Hapus selalu rata kanan (bila hanya Hapus, tetap di kanan). */
+.member-shell .accounts-card .acct-actions {
+  grid-area: actions; display: flex; gap: 8px; align-items: center; justify-content: flex-end;
+  border-top: 1px solid #f1f5f9; padding-top: 12px; margin-top: 2px;
+}
+@media (min-width: 641px) {
+  .member-shell .accounts-card .acct-actions {
+    border-top: 0; padding-top: 0; margin-top: 0;
+    justify-content: flex-end; flex-wrap: nowrap;
+  }
+}
+@media (max-width: 640px) {
+  .member-shell .accounts-card .acct-actions .btn-authorize { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+}
+
+/* Tombol Otorisasi solid warna channel (var --ch disetel per baris). */
+.member-shell .accounts-card .btn-authorize {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--ch, #108ee9); color: #fff; font-weight: 700; font-size: 14px;
+  border-radius: 12px; padding: 10px 16px; min-height: 44px; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(2, 44, 34, 0.10), 0 6px 16px -8px var(--ch, #108ee9);
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.member-shell .accounts-card .btn-authorize:hover { filter: brightness(0.92); transform: translateY(-1px); }
+.member-shell .accounts-card .btn-authorize:focus-visible { outline: 2px solid var(--ch, #108ee9); outline-offset: 2px; }
+.member-shell .accounts-card .btn-authorize:disabled { background: var(--ch, #108ee9); opacity: 0.75; }
+.member-shell .accounts-card .btn-authorize:disabled:hover { filter: none; transform: none; }
+
+/* Tombol Hapus halus: teks + ikon tempat sampah, merah, tanpa blok besar. */
+.member-shell .accounts-card .btn-delete-subtle {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  color: #be123c; font-weight: 600;
+  border-radius: 12px; padding: 10px 12px; min-height: 44px; white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+.member-shell .accounts-card .btn-delete-subtle:hover { background: #fff1f2; }
+.member-shell .accounts-card .btn-delete-subtle:focus-visible { outline: 2px solid #be123c; outline-offset: 2px; }
+
+/* ===== v35: Inquiry premium — Playground member + admin ===== */
+/* Layout mengikuti referensi user (screenshot 26418_1_dmq2.jpg): header
+   badge + chip endpoint, kartu kuota + progress bar, kartu form, kartu
+   hasil (toggle Card/JSON Raw, kotak hijau nama pemilik + Salin, detail
+   bank + nomor rekening, footer waktu query + latency), kartu promo Docs.
+   Semua aturan di-scope .inquiry-premium — kelas unik yang hanya dipakai
+   komponen InquiryPremiumShell di kedua Playground, jadi tidak bocor ke
+   halaman lain di panel member (.member-shell) maupun admin (.app-shell).
+   Warna ditulis eksplisit (slate + emerald) agar tampil identik di kedua
+   panel, tidak mengikuti var(--accent) template admin. */
+
+.inquiry-premium { display: flex; flex-direction: column; gap: 16px; }
+
+/* Header: badge + chip endpoint, judul, deskripsi. */
+.inquiry-premium .inq-head-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.inquiry-premium .inq-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+  color: #047857; background: #ecfdf5;
+  border: 1px solid #a7f3d0; border-radius: 999px; padding: 6px 12px;
+}
+.inquiry-premium .inq-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #10b981; }
+.inquiry-premium .inq-endpoint { font-size: 12.5px; color: #64748b; }
+.inquiry-premium .inq-endpoint code {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: #334155;
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  border-radius: 8px; padding: 4px 8px;
+  overflow-wrap: break-word;
+}
+.inquiry-premium .inq-title {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.02em;
+  color: #0f172a; margin: 12px 0 6px;
+}
+.inquiry-premium .inq-desc { font-size: 14px; line-height: 1.65; color: #64748b; margin: 0; }
+
+/* Kartu dasar. */
+.inquiry-premium .inq-card {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+@media (min-width: 641px) {
+  .inquiry-premium .inq-card { padding: 20px; }
+}
+
+/* Kartu kuota: ikon petir + angka + progress bar. */
+.inquiry-premium .inq-quota {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: #f8fafc;
+}
+.inquiry-premium .inq-quota-icon {
+  flex: none; width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px; background: #e0f2fe; color: #0284c7;
+}
+.inquiry-premium .inq-quota-body { flex: 1; min-width: 0; }
+.inquiry-premium .inq-quota-title { font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.5; }
+.inquiry-premium .inq-quota-title b {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #047857;
+}
+.inquiry-premium .inq-quota-limit { color: #64748b; font-weight: 600; }
+.inquiry-premium .inq-quota-sub { font-size: 12.5px; color: #64748b; margin-top: 2px; line-height: 1.5; }
+.inquiry-premium .inq-quota-progress {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px; color: #64748b; margin-top: 10px;
+}
+.inquiry-premium .inq-quota-pct {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700; color: #047857;
+}
+.inquiry-premium .inq-bar {
+  height: 8px; border-radius: 999px; background: #e2e8f0;
+  overflow: hidden; margin-top: 6px;
+}
+.inquiry-premium .inq-bar-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: #10b981; transition: width 0.4s ease;
+}
+
+/* Kepala kartu form: ikon + judul + hitungan bank. */
+.inquiry-premium .inq-form-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 12px; margin-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.inquiry-premium .inq-form-icon {
+  flex: none; width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; background: #ecfdf5; color: #047857;
+}
+.inquiry-premium .inq-form-head h3 { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0; }
+.inquiry-premium .inq-form-count { margin-left: auto; font-size: 13px; color: #94a3b8; white-space: nowrap; }
+
+/* Field form inquiry. */
+.inquiry-premium .inq-field { margin-bottom: 16px; }
+.inquiry-premium .inq-label-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  margin-bottom: 6px;
+}
+.inquiry-premium .inq-label-row label { font-size: 13px; font-weight: 600; color: #0f172a; }
+.inquiry-premium .inq-required { color: #dc2626; }
+.inquiry-premium .inq-label-hint { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+.inquiry-premium .inq-field select,
+.inquiry-premium .inq-field input {
+  width: 100%; height: 48px; padding: 0 12px;
+  border: 1px solid #e2e8f0; border-radius: 12px;
+  background: #fff; font-size: 15px; color: #0f172a; font-family: inherit;
+}
+.inquiry-premium .inq-field select:focus,
+.inquiry-premium .inq-field input:focus {
+  outline: none; border-color: #047857;
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.15);
+}
+.inquiry-premium .inq-field input.mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+.inquiry-premium .inq-input-wrap { position: relative; }
+.inquiry-premium .inq-input-wrap input { padding-right: 78px; }
+.inquiry-premium .inq-paste {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  height: 36px; padding: 0 12px;
+  display: inline-flex; align-items: center;
+  border: 0; background: transparent; border-radius: 8px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  color: #64748b; cursor: pointer; font-family: inherit;
+}
+.inquiry-premium .inq-paste:hover { background: #f1f5f9; color: #0f172a; }
+.inquiry-premium .inq-paste:focus-visible { outline: 2px solid #047857; outline-offset: 1px; }
+.inquiry-premium .inq-hint { font-size: 12.5px; color: #94a3b8; margin: 6px 0 0; line-height: 1.5; }
+.inquiry-premium .inq-hint-warn { color: #b45309; }
+
+/* Tombol submit premium (gaya btn-add-premium, ditulis ulang di sini agar
+   tampil identik di panel member maupun admin). */
+.inquiry-premium .inq-submit {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 48px;
+  border: 0; border-radius: 12px;
+  background: #047857; color: #fff;
+  font-size: 15px; font-weight: 700; font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(2, 44, 34, 0.12), 0 10px 24px -10px rgba(4, 120, 87, 0.5);
+  transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.inquiry-premium .inq-submit:hover { background: #065f46; transform: translateY(-1px); }
+.inquiry-premium .inq-submit:active { transform: translateY(0) scale(0.99); }
+.inquiry-premium .inq-submit:focus-visible { outline: 2px solid #047857; outline-offset: 2px; }
+.inquiry-premium .inq-submit:disabled { opacity: 0.75; cursor: not-allowed; transform: none; }
+.inquiry-premium .inq-submit svg { flex: none; }
+
+/* Kepala kartu hasil + badge HTTP 200. */
+.inquiry-premium .inq-result-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+}
+.inquiry-premium .inq-result-head h3 { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0; }
+.inquiry-premium .inq-ok-badge {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  color: #047857; background: #ecfdf5;
+  border: 1px solid #a7f3d0; border-radius: 999px; padding: 4px 8px;
+}
+
+/* Toggle tersegmentasi Card / JSON Raw. */
+.inquiry-premium .inq-toggle {
+  display: flex; gap: 3px;
+  background: #f1f5f9; border-radius: 10px; padding: 3px;
+  margin-bottom: 16px;
+}
+.inquiry-premium .inq-toggle button {
+  flex: 1; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; padding: 0 8px;
+  border: 0; background: transparent; border-radius: 8px;
+  font-size: 13px; font-weight: 600; color: #64748b;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.inquiry-premium .inq-toggle button.active {
+  background: #fff; color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.inquiry-premium .inq-toggle button:focus-visible { outline: 2px solid #047857; outline-offset: 1px; }
+
+/* Kotak hijau nama pemilik. */
+.inquiry-premium .inq-result-name {
+  background: #ecfdf5; border: 1px solid #a7f3d0;
+  border-radius: 12px; padding: 14px; margin-bottom: 12px;
+}
+.inquiry-premium .inq-result-name-top {
+  display: flex; align-items: center; gap: 8px;
+}
+.inquiry-premium .inq-check { flex: none; color: #047857; display: inline-flex; }
+.inquiry-premium .inq-result-label {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: #047857;
+}
+.inquiry-premium .inq-copy-btn {
+  margin-left: auto; flex: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 10px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; color: #334155;
+  cursor: pointer; font-family: inherit;
+}
+.inquiry-premium .inq-copy-btn:hover { border-color: #cbd5e1; color: #0f172a; }
+.inquiry-premium .inq-copy-btn:focus-visible { outline: 2px solid #047857; outline-offset: 1px; }
+.inquiry-premium .inq-result-owner {
+  font-size: 21px; font-weight: 800; line-height: 1.3;
+  color: #022c22; text-transform: uppercase;
+  margin-top: 10px; overflow-wrap: break-word;
+}
+.inquiry-premium .inq-result-sub { font-size: 13px; line-height: 1.55; color: #065f46; margin: 6px 0 0; }
+
+/* Kotak detail bank / nomor rekening. */
+.inquiry-premium .inq-detail {
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
+}
+.inquiry-premium .inq-detail-row { display: flex; align-items: center; gap: 12px; }
+.inquiry-premium .inq-detail-main { flex: 1; min-width: 0; }
+.inquiry-premium .inq-detail-label {
+  display: block;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #94a3b8; margin-bottom: 4px;
+}
+.inquiry-premium .inq-detail-value { font-size: 15px; font-weight: 700; color: #0f172a; overflow-wrap: break-word; }
+.inquiry-premium .inq-detail-value.mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.01em;
+}
+.inquiry-premium .inq-chip {
+  display: inline-block;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; color: #475569;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 999px;
+  padding: 3px 8px; margin-top: 6px;
+}
+.inquiry-premium .inq-status-active {
+  display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.02em;
+  color: #047857; margin-top: 4px;
+}
+.inquiry-premium .inq-copy-icon {
+  flex: none; width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; border-radius: 8px;
+  color: #64748b; cursor: pointer;
+}
+.inquiry-premium .inq-copy-icon:hover { background: #e2e8f0; color: #0f172a; }
+.inquiry-premium .inq-copy-icon.copied { color: #047857; }
+.inquiry-premium .inq-copy-icon:focus-visible { outline: 2px solid #047857; outline-offset: 1px; }
+
+/* Footer hasil: waktu query + latency. */
+.inquiry-premium .inq-result-foot {
+  display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+  padding: 10px 14px;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: #64748b;
+}
+.inquiry-premium .inq-latency { color: #047857; font-weight: 700; white-space: nowrap; }
+.inquiry-premium .inq-latency-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #10b981; margin-right: 6px;
+}
+
+/* Kartu promo Docs API. */
+.inquiry-premium .inq-promo { display: flex; align-items: center; gap: 12px; }
+.inquiry-premium .inq-promo-icon {
+  flex: none; width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; background: #dbeafe; color: #1d4ed8;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.02em;
+}
+.inquiry-premium .inq-promo p { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.55; color: #334155; margin: 0; }
+.inquiry-premium .inq-promo-link {
+  flex: none; font-size: 13.5px; font-weight: 700; color: #047857;
+  text-decoration: none; white-space: nowrap;
+}
+.inquiry-premium .inq-promo-link:hover { text-decoration: underline; }
+
+@media (max-width: 560px) {
+  .inquiry-premium .inq-title { font-size: 20px; }
+  .inquiry-premium .inq-result-owner { font-size: 19px; }
+  .inquiry-premium .inq-endpoint { flex: 1 1 100%; }
 }

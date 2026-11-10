@@ -9,7 +9,6 @@ import {
   IconGrid,
   IconBook,
   IconKey,
-  IconSearch,
   IconWallet,
   IconZap,
 } from '../../components/icons';
@@ -22,7 +21,6 @@ const NAV = [
     items: [
       { href: '/member/dashboard', label: 'Dashboard', icon: <IconGrid /> },
       { href: '/member/accounts', label: 'Rekening', icon: <IconWallet /> },
-      { href: '/member/inquiry', label: 'Inquiry Rekening', icon: <IconSearch /> },
       { href: '/member/playground', label: 'Playground', icon: <IconZap /> },
     ],
   },

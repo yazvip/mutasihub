@@ -4,21 +4,27 @@ import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost, friendlyError, isApiError } from '../../../lib/api';
 import { formatAmount, formatDateWIB } from '../../../lib/format';
-import { bankLabel, loadBanks, type Bank } from '../../../lib/banks';
+import { loadBanks, type Bank } from '../../../lib/banks';
 import {
   Button,
   Card,
   ErrorBanner,
-  Field,
-  Loading,
   PageHeading,
 } from '../../../components/ui';
+import {
+  InquiryBankForm,
+  InquiryPremiumShell,
+  type InquiryQuota,
+} from '../../../components/inquiry-premium';
 
 // Playground member — model "Coba Cek Live" Rajacek: tab Live (jalur asli,
 // inquiry ikut gate paket) dan tab Demo (data palsu, tanpa sentuh provider).
 // Live Inquiry: POST /api/v1/inquiry/bank-account.
 // Live Mutasi: GET /api/v1/mutasi -> {data: [{provider, date, type,
 //   amount_cents, description, sender}]}.
+// v35: bagian inquiry memakai InquiryPremiumShell (layout referensi user:
+// header badge + chip endpoint, kartu kuota, kartu form, kartu hasil
+// Card/JSON Raw, promo Docs API). Tool Cek Mutasi tidak berubah.
 
 type Mutasi = {
   provider?: string;
@@ -99,6 +105,9 @@ export default function MemberPlaygroundPage() {
   const [disabled, setDisabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [usage, setUsage] = useState<InquiryQuota>({ kind: 'loading' });
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [queryAt, setQueryAt] = useState<Date | null>(null);
 
   useEffect(() => {
     loadBanks().then((list) => {
@@ -107,23 +116,51 @@ export default function MemberPlaygroundPage() {
     });
   }, []);
 
+  async function loadUsage() {
+    try {
+      const u = await apiGet<any>('/api/v1/inquiry/usage');
+      setUsage({ kind: 'member', used: u?.used_today ?? 0, limit: u?.limit_today ?? null });
+      if (u?.inquiry_enabled === false) setDisabled(true);
+    } catch (err) {
+      if (isApiError(err) && err.code === 'inquiry_disabled') {
+        setDisabled(true);
+        setUsage({ kind: 'off', message: 'Fitur Inquiry Rekening tidak aktif di paket kamu.' });
+      } else {
+        setUsage({ kind: 'off', message: 'Kuota tidak dapat dimuat.' });
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (tool !== 'inquiry') return;
+    setUsage({ kind: 'loading' });
+    loadUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
+
   function reset() {
     setResult(null);
     setMutasi([]);
     setError(null);
     setDisabled(false);
+    setLatencyMs(null);
+    setQueryAt(null);
   }
 
   async function runLiveInquiry(e: FormEvent) {
     e.preventDefault();
     reset();
     setBusy(true);
+    const t0 = performance.now();
     try {
       const d = await apiPost<InquiryResult>('/api/v1/inquiry/bank-account', {
         bank_code: bankCode,
         account_number: accountNumber.trim(),
       });
       setResult(d);
+      setLatencyMs(performance.now() - t0);
+      setQueryAt(new Date());
+      loadUsage();
     } catch (err) {
       if (isApiError(err) && err.code === 'inquiry_disabled') {
         setDisabled(true);
@@ -153,7 +190,10 @@ export default function MemberPlaygroundPage() {
   function runDemoInquiry(e: FormEvent) {
     e.preventDefault();
     reset();
+    const t0 = performance.now();
     setResult(DEMO_INQUIRY[demoChoice]);
+    setLatencyMs(performance.now() - t0);
+    setQueryAt(new Date());
   }
 
   function runDemoMutasi() {
@@ -198,72 +238,54 @@ export default function MemberPlaygroundPage() {
       )}
 
       {tool === 'inquiry' && mode === 'live' && (
-        <Card title="Inquiry Rekening — Live">
-          <form onSubmit={runLiveInquiry}>
-            <div className="form-grid">
-              <Field label="Bank">
-                <select value={bankCode} onChange={(e) => setBankCode(e.target.value)} disabled={!loaded}>
-                  {banks.map((b) => (
-                    <option key={b.code} value={b.code}>{bankLabel(b)}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Nomor rekening" hint="5–20 digit angka. Mengikuti gate paket kamu.">
-                <input
-                  required
-                  inputMode="numeric"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                  placeholder="mis. 1234567890"
-                />
-              </Field>
-            </div>
-            <div className="row-actions">
-              <Button type="submit" disabled={busy || !loaded}>{busy ? 'Memeriksa…' : 'Cek Nama Pemilik'}</Button>
-            </div>
-          </form>
-          {result && (
-            <div style={{ marginTop: 16 }}>
-              <dl>
-                <dt>Nama pemilik</dt>
-                <dd><strong>{result.account_name}</strong></dd>
-                <dt>Bank</dt>
-                <dd>{result.bank_name} ({result.bank_code})</dd>
-                <dt>Nomor rekening</dt>
-                <dd className="mono">{result.account_number}</dd>
-              </dl>
-            </div>
+        <InquiryPremiumShell
+          endpoint="/api/v1/inquiry/bank-account"
+          quota={usage}
+          bankCount={banks.length}
+          form={(
+            <InquiryBankForm
+              banks={banks}
+              bankCode={bankCode}
+              onBankCodeChange={setBankCode}
+              accountNumber={accountNumber}
+              onAccountNumberChange={setAccountNumber}
+              onSubmit={runLiveInquiry}
+              busy={busy}
+              loaded={loaded}
+            />
           )}
-        </Card>
+          result={result}
+          rawResult={result}
+          latencyMs={latencyMs}
+          queryAt={queryAt}
+        />
       )}
 
       {tool === 'inquiry' && mode === 'demo' && (
-        <Card title="Inquiry Rekening — Demo">
-          <form onSubmit={runDemoInquiry}>
-            <Field label="Rekening contoh">
-              <select value={demoChoice} onChange={(e) => setDemoChoice(Number(e.target.value))}>
-                {DEMO_INQUIRY.map((d, i) => (
-                  <option key={i} value={i}>{d.label} — {d.account_name}</option>
-                ))}
-              </select>
-            </Field>
-            <div className="row-actions">
-              <Button type="submit">Tampilkan Hasil Demo</Button>
-            </div>
-          </form>
-          {result && (
-            <div style={{ marginTop: 16 }}>
-              <dl>
-                <dt>Nama pemilik</dt>
-                <dd><strong>{result.account_name}</strong></dd>
-                <dt>Bank</dt>
-                <dd>{result.bank_name} ({result.bank_code})</dd>
-                <dt>Nomor rekening</dt>
-                <dd className="mono">{result.account_number}</dd>
-              </dl>
-            </div>
+        <InquiryPremiumShell
+          endpoint="/api/v1/inquiry/bank-account"
+          quota={usage}
+          bankCount={banks.length}
+          form={(
+            <form onSubmit={runDemoInquiry}>
+              <div className="inq-field">
+                <div className="inq-label-row">
+                  <label htmlFor="inq-demo">Rekening contoh</label>
+                </div>
+                <select id="inq-demo" value={demoChoice} onChange={(e) => setDemoChoice(Number(e.target.value))}>
+                  {DEMO_INQUIRY.map((d, i) => (
+                    <option key={i} value={i}>{d.label} — {d.account_name}</option>
+                  ))}
+                </select>
+              </div>
+              <button type="submit" className="inq-submit">Tampilkan Hasil Demo</button>
+            </form>
           )}
-        </Card>
+          result={result}
+          rawResult={result}
+          latencyMs={latencyMs}
+          queryAt={queryAt}
+        />
       )}
 
       {tool === 'mutasi' && mode === 'live' && (
@@ -290,8 +312,7 @@ export default function MemberPlaygroundPage() {
         </Card>
       )}
 
-      {!loaded && mode === 'live' && tool === 'inquiry' && <Loading />}
-      <RawJson data={result} />
+      {tool === 'mutasi' && <RawJson data={result} />}
     </>
   );
 }

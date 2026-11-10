@@ -94,6 +94,11 @@ type accountRowOut struct {
 	Status        string `json:"status"`
 	BalanceCents  int64  `json:"balance_cents"`
 	LastSyncedAt  string `json:"last_synced_at,omitempty"`
+	// v34: tanggal tambah (created_at) + tanggal otorisasi pertama
+	// (authorized_at, NULL bila belum pernah diotorisasi — termasuk
+	// rekening aktif lama sebelum migrasi 0015, yang tidak di-backfill).
+	CreatedAt    string `json:"created_at,omitempty"`
+	AuthorizedAt string `json:"authorized_at,omitempty"`
 	// SyncPaused: rekening ini dibekukan dari sync karena paket aktif
 	// member max_accounts-nya lebih kecil dari jumlah rekening
 	// terhubung (v30: yang paling dulu dihubungkan dipertahankan).
@@ -107,7 +112,7 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := memberID(r)
 	rows, err := s.store.DB.QueryContext(r.Context(), `SELECT id, provider, label,
-		COALESCE(phone_masked,''), COALESCE(account_masked,''), status, balance_cents, last_synced_at, created_at
+		COALESCE(phone_masked,''), COALESCE(account_masked,''), status, balance_cents, last_synced_at, created_at, authorized_at
 		FROM linked_accounts WHERE member_id=? ORDER BY created_at DESC`, id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal membaca rekening")
@@ -118,11 +123,16 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var a accountRowOut
 		var last sql.NullTime
-		if err := rows.Scan(&a.ID, &a.Provider, &a.Label, &a.PhoneMasked, &a.AccountMasked, &a.Status, &a.BalanceCents, &last, &a.createdAt); err != nil {
+		var auth sql.NullTime
+		if err := rows.Scan(&a.ID, &a.Provider, &a.Label, &a.PhoneMasked, &a.AccountMasked, &a.Status, &a.BalanceCents, &last, &a.createdAt, &auth); err != nil {
 			continue
 		}
 		if last.Valid {
 			a.LastSyncedAt = formatWIB(last.Time)
+		}
+		a.CreatedAt = formatWIB(a.createdAt)
+		if auth.Valid {
+			a.AuthorizedAt = formatWIB(auth.Time)
 		}
 		out = append(out, a)
 	}
@@ -328,10 +338,17 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// v34: BCA langsung aktif saat dibuat (tidak ada OAuth lanjutan):
+	// catat tanggal otorisasi = saat pembuatan. DANA tetap NULL sampai
+	// webhook binding / self-heal sync mengaktifkan.
+	authorizedAt := sql.NullTime{}
+	if status == "active" {
+		authorizedAt = sql.NullTime{Time: time.Now(), Valid: true}
+	}
 	if _, err := tx.ExecContext(r.Context(), `INSERT INTO linked_accounts
-		(id, member_id, provider, label, phone_masked, account_masked, credential_ciphertext, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		acctID, id, provider, strings.TrimSpace(req.Label), phoneMasked, acctMasked, credJSON, status); err != nil {
+		(id, member_id, provider, label, phone_masked, account_masked, credential_ciphertext, status, authorized_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		acctID, id, provider, strings.TrimSpace(req.Label), phoneMasked, acctMasked, credJSON, status, authorizedAt); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal menyimpan rekening")
 		return
 	}
