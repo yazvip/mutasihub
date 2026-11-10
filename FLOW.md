@@ -4,7 +4,7 @@ Peta alur proyek MutasiHub: cek mutasi DANA & BCA realtime untuk bisnis online
 (top-up, deposit, rekonsiliasi pembayaran otomatis) via Connecta B2B Partner API.
 Dokumen ini ditulis dari kode yang sebenarnya (`backend/`, `frontend/`,
 `backend/migrations/0001–0016`) dan laporan audit yang ada — bukan dari ingatan.
-Terakhir diperbarui: 10 November 2026 (versi live v37).
+Terakhir diperbarui: 10 November 2026 (versi live v38).
 
 > Aturan dokumen ini: tidak ada nilai kredensial/secret/key/token/password
 > di sini — hanya NAMA variabel dan placeholder bila perlu.
@@ -388,14 +388,16 @@ Nilai di bawah ini HANYA nama + arti; isinya ada di server.
 | `smtp_username` (v37) | (kosong) | Username SMTP (boleh kosong = tanpa auth) |
 | `smtp_password` (v37) | (kosong) | Password SMTP — disimpan `enc:` + AES-256-GCM; **tidak pernah dikembalikan ke panel** (hanya flag `smtp_password_configured`); kosong saat simpan = pertahankan yang lama |
 | `smtp_tls_mode` (v37) | `starttls` | `none` / `starttls` / `tls` |
-| `smtp_from_name` (v37) | `MutasiHub` | Nama pengirim di email member |
-| `smtp_from_email` (v37) | (kosong) | Alamat pengirim (wajib berisi `@` bila diisi) |
+| `smtp_from_name` (v37) | `MutasiHub` | Nama pengirim di email member (dipakai ulang provider Mailketing API) |
+| `smtp_from_email` (v37) | (kosong) | Alamat pengirim (wajib berisi `@` bila diisi; dipakai ulang provider Mailketing API) |
+| `mail_provider` (v38) | (kosong → `smtp`) | Provider pengiriman email: `smtp` atau `mailketing_api` |
+| `mailketing_api_key` (v38) | (kosong) | Token API Mailketing — disimpan `enc:` + AES-256-GCM; **tidak pernah dikembalikan ke panel** (hanya flag `mailketing_api_key_configured`); kosong saat simpan = pertahankan yang lama |
 
 ---
 
 ## 7. Alur deploy
 
-Versi terakhir live: **v37** (backend v37 sha256 `d7526752a1dc9d309e30729dd8350558dee07d16bd0b85b433b371ee995b733e`, frontend v37; BUILD_ID `BynPScxiK_8PNtmwHCcf0`). Penomoran:
+Versi terakhir live: **v38** (backend v38 sha256 `13e978fc01f3b9643c62988663ead88a0c9acdc8d21df75d7d7dc7999457b8e6`, frontend v38; BUILD_ID `eXoqy0y4OlB3lfrTeSmxr`). Penomoran:
 `v<angka>` untuk rilis, huruf akhir (`b/c/d`) untuk hotfix.
 
 1. **Bangun lokal** (workspace `~/workspace/mutasi-platform/`):
@@ -487,6 +489,7 @@ catatan proyek; nomor versi terbukti dari script transfer
 | v36 | Redesign premium daftar Rekening terhubung, murni CSS (scope `.member-shell.accounts-card`; `page.tsx` tidak diubah) |
 | antara v36–v37 (10 Nov, VPS Agent) | Halaman Syarat & Ketentuan + Kebijakan Privasi premium + sitemap (`/terms`, `/privacy`, `sitemap.ts`, `legal-shell.tsx`) + `DEPLOY_RUNBOOK.md`; di-deploy langsung dari VPS (BUILD_ID `ufQxR59nXfRRDbR4ET3mr`) dan di-push VPS Agent ke GitHub (`dea617e`); masuk repo lokal via `git fetch` + rebase saat v37 |
 | v37 | **SMTP + email member**: package `internal/mail` (stdlib `net/smtp` + `crypto/tls`; STARTTLS 587, TLS 465, plain); pengaturan SMTP di panel admin (password terenkripsi AES-256-GCM, tidak pernah dikembalikan ke panel) + `POST /admin/email/test` (400 `smtp_not_configured` bila belum dikonfigurasi); email verifikasi + reset password (fail-open); email tagihan pending (pay-gobiz) + paid (callback Gobiz); pengingat paket H-3/H-1 + notice kedaluwarsa via job 30 menit (anti-duplikat via `email_logs`); pengumuman admin ke semua member aktif (`/admin/announcements`, draf → terkirim sekali); migrasi 0016 (`email_logs`, `admin_announcements`); `GET /api/v1/settings` kini allowlist kunci publik (kunci `smtp_*` tidak bocor) |
+| v38 | **Provider Mailketing API (pengganti SMTP, keputusan user)**: `internal/mail` tambah provider `mailketing_api` — kirim lewat REST API v2 `POST https://api.mailketing.co.id/api/v2/send` (`Authorization: Bearer` token, body `from_name`/`from_email`/`subject`/`recipient`/`content`, satu request = satu penerima; error mapping 401 token tidak valid / 402 kredit habis / 403 domain belum terverifikasi / 422 validasi / 429 rate limit; token tidak pernah muncul di error/log); pengaturan admin tambah `mail_provider` (`smtp` \| `mailketing_api`) + `mailketing_api_key` terenkripsi AES-256-GCM (hanya flag `mailketing_api_key_configured` yang dikembalikan ke panel); alamat/nama pengirim dipakai ulang dari field SMTP; tombol kirim email tes memakai provider aktif (400 `mailketing_api_key_not_configured` bila provider Mailketing aktif tapi key belum diisi); semua alur email (verifikasi, reset, tagihan, pengingat H-3/H-1, pengumuman) lewat provider aktif; kode SMTP tetap ada sebagai pilihan provider; tanpa migrasi baru (hanya settings key) |
 
 ---
 
@@ -503,15 +506,17 @@ Jujur, dari konteks proyek (bukan tebakan):
 - **Google OAuth kosong** (client ID/secret kosong) → `GET /api/v1/auth/google`
   503. Redirect URI yang harus didaftarkan:
   `https://mutasi.rajacek.com/api/v1/auth/google/callback`.
-- **SMTP sudah ada (v37) tapi belum dikonfigurasi** — pengaturan ada di
-  panel admin (host, port, mode TLS, username, password terenkripsi,
-  nama + alamat pengirim) + tombol kirim email tes. Selama belum diisi,
-  email verifikasi, reset password, tagihan, dan pengingat TIDAK
-  terkirim (fail-open: register/order tetap sukses). Yang butuh user:
-  isi kredensial SMTP di panel lalu tekan kirim email tes. Catatan
-  verifikasi: endpoint tes mengembalikan 401 tanpa sesi admin (route
-  ada + auth jalan); perilaku 400 `smtp_not_configured` tanpa
-  konfigurasi belum terbukti live karena butuh sesi admin.
+- **Email via Mailketing API (v38) tapi API key belum diisi** — SMTP
+  dibatalkan atas keputusan user (10 Nov ~20:52 WIB); provider aktif
+  harus dipilih `mailketing_api` di panel admin + isi API key
+  (token dari dashboard Mailketing → Integrasi → Email Application
+  API). Selama belum diisi, email verifikasi, reset password,
+  tagihan, dan pengingat TIDAK terkirim (fail-open: register/order
+  tetap sukses). Yang butuh user: pilih provider Mailketing API, isi
+  API key, lalu tekan kirim email tes. Catatan verifikasi: endpoint
+  tes mengembalikan 401 tanpa sesi admin (route ada + auth jalan);
+  perilaku 400 `mailketing_api_key_not_configured` tanpa key belum
+  terbukti live karena butuh sesi admin.
 - **OVO ditunda** — tidak ada endpoint, tabel, atau UI OVO.
 - **Disburse belum dibangun** (sengaja, lihat §1) — sumber dana belum
   terbukti; tes pembuktian Rp10.000 menunggu keputusan user.
