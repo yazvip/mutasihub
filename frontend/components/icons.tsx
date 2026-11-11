@@ -110,6 +110,64 @@ export const IconWallet = (p: P) => (
   </Svg>
 );
 
+// v41: jam — kartu ringkasan "Menunggu OTP/Sinkron".
+export const IconClock = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <polyline points="12 7 12 12 15.5 13.5" />
+  </Svg>
+);
+
+// v41: kepingan salju — kartu ringkasan "Status Beku".
+export const IconSnowflake = (p: P) => (
+  <Svg {...p}>
+    <line x1="12" y1="2" x2="12" y2="22" />
+    <line x1="3.3" y1="7" x2="20.7" y2="17" />
+    <line x1="20.7" y1="7" x2="3.3" y2="17" />
+  </Svg>
+);
+
+// v41: salin — tombol salin nomor tersamar di kartu rekening.
+export const IconCopy = (p: P) => (
+  <Svg {...p}>
+    <rect x="9" y="9" width="13" height="13" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </Svg>
+);
+
+// v41: refresh — tombol Sinkron + tanggal terakhir sinkron.
+export const IconRefresh = (p: P) => (
+  <Svg {...p}>
+    <polyline points="23 4 23 10 17 10" />
+    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+  </Svg>
+);
+
+// v41: kalender — tanggal ditambahkan di kartu rekening.
+export const IconCalendar = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="18" rx="2" />
+    <line x1="16" y1="2" x2="16" y2="6" />
+    <line x1="8" y1="2" x2="8" y2="6" />
+    <line x1="3" y1="10" x2="21" y2="10" />
+  </Svg>
+);
+
+// v41: chevron kanan — tombol Detail di kartu rekening.
+export const IconChevronRight = (p: P) => (
+  <Svg {...p}>
+    <polyline points="9 18 15 12 9 6" />
+  </Svg>
+);
+
+// v41: perisai centang — sub-label "Real-time" kartu Total Saldo.
+export const IconShieldCheck = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <polyline points="9 12 11 14 15 10" />
+  </Svg>
+);
+
 // v37: amplop — menu Pengumuman admin.
 export const IconMail = (p: P) => (
   <Svg {...p}>

@@ -581,27 +581,34 @@ tr:last-child td { border-bottom: none; }
 .table-fixed { table-layout: fixed; }
 .table-fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ===== v40b: tabel Daftar Rekening admin ===== */
-/* Akar cacat: colgroup % (20/8/16/11/14/11/8/7/5) + table-layout fixed
-   membuat kolom sempit (Detail 5% ≈ 47-60px, tombol ±72px) terpotong
-   ellipsis oleh .table-fixed td, sementara table width:100% membuat
-   .table-wrap tidak pernah bisa di-scroll (scrollWidth == clientWidth)
-   — dan header satu kata (DITAMBAHKAN) meluber ke kolom sebelah karena
-   th tanpa overflow. Perbaikan, HANYA di scope table.rekening-table:
-   lebar kolom piksel (jumlah = min-width tabel, 1168px) + padding header
-   diperkecil + ellipsis rapi untuk email + scrollbar wrap terlihat.
-   Di bawah min-width, tabel melebar melewati wrap sehingga scroll
-   horizontal .table-wrap aktif dan kolom Detail tidak pernah terpotong.
-   Aturan global `table { min-width: 640px }` dan .app-shell TIDAK diubah;
-   media query ≤640px di bawah (min-width: 0) tetap menang karena
-   spesifikasinya sama dan posisinya lebih akhir. */
-table.rekening-table { min-width: 1168px; }
-table.rekening-table th { padding: 10px 8px; overflow: hidden; text-overflow: ellipsis; }
-table.rekening-table td .rekening-email { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.table-wrap.rekening-wrap { scrollbar-width: thin; scrollbar-color: #94a3b8 #f1f5f9; }
-.table-wrap.rekening-wrap::-webkit-scrollbar { height: 8px; }
-.table-wrap.rekening-wrap::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 999px; }
-.table-wrap.rekening-wrap::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 999px; }
+/* ===== v41: Daftar Rekening premium (grid kartu, bukan tabel) ===== */
+/* Menggantikan v40b: tabel 9 kolom dihapus, daftar jadi grid kartu premium
+   seperti mockup user (tile channel + nomor tersamar + pill status +
+   kotak saldo/transaksi + member + sinkron/ditambahkan + tombol Sinkron
+   + Detail). Aturan global `table { min-width: 640px }` dan template
+   .app-shell TIDAK diubah; semua aturan baru di scope .rekening-*
+   (halaman ini saja) + modifier .stat-right pada kartu statistik. */
+.stat.stat-right { flex-direction: row-reverse; justify-content: space-between; }
+.stat-icon.icon-slate { background: #f1f5f9; color: #475569; }
+.rekening-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 4px 0 16px; }
+.rekening-filters .field { margin-bottom: 0; }
+.rekening-filters .field-wide { grid-column: 1 / -1; }
+@media (min-width: 900px) {
+  .rekening-filters { grid-template-columns: 2fr 1fr 1fr 1.2fr; }
+  .rekening-filters .field-wide { grid-column: auto; }
+}
+.rekening-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 860px) {
+  .rekening-grid { grid-template-columns: 1fr; }
+}
+.rekening-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 20px; box-shadow: 0 1px 2px rgba(28, 25, 23, 0.05);
+  display: flex; flex-direction: column; gap: 14px; min-width: 0;
+}
+.rekening-card .btn-outline.rek-neutral { border-color: #cbd5e1; color: #0f172a; }
+.rekening-card .btn-outline.rek-neutral:hover { background: #f8fafc; border-color: #94a3b8; }
+.rekening-skeleton { height: 320px; border-radius: 16px; }
 
 /* ---------- Responsive ---------- */
 @media (min-width: 1024px) {
@@ -1079,10 +1086,6 @@ html, body { overflow-x: clip; }
   /* P2-8: email ter-mask tampil utuh dan boleh membungkus, bukan
      terpotong ellipsis seperti di desktop (.table-fixed). */
   table.mobile-card-table td[data-label="Email"] { overflow-wrap: break-word; word-break: normal; }
-  /* v40b: email member di tabel Rekening — di kartu HP harus tampil utuh
-     dan membungkus (batalkan ellipsis desktop .rekening-email), sama
-     seperti P2-8 untuk kolom Email. */
-  table.rekening-table td .rekening-email { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; }
 }
 
 /* ===== v31-C: konsistensi desain ===== */

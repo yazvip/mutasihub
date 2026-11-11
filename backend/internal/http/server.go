@@ -131,6 +131,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/admin/members/{id}", s.authAdmin(s.handleAdminGetMember))
 	m.HandleFunc("GET /api/v1/admin/accounts", s.authAdmin(s.handleAdminListAccounts))
 	m.HandleFunc("GET /api/v1/admin/accounts/{id}", s.authAdmin(s.handleAdminGetAccount))
+	m.HandleFunc("POST /api/v1/admin/accounts/{id}/sync", s.authAdmin(s.handleAdminSyncAccount))
 	m.HandleFunc("PUT /api/v1/admin/members/{id}", s.authAdmin(s.handleAdminUpdateMember))
 	m.HandleFunc("POST /api/v1/admin/members/{id}/reset-password", s.authAdmin(s.handleAdminResetMemberPassword))
 	m.HandleFunc("GET /api/v1/admin/settings", s.authAdmin(s.handleAdminGetSettings))

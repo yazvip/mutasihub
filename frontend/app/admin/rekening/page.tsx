@@ -1,13 +1,18 @@
 'use client';
 
-// v40: Daftar Rekening admin — semua rekening terhubung (DANA/BCA) dengan
-// member, saldo, transaksi terakhir, status (termasuk "Beku" bila sync
-// dijeda), filter + sortir + pagination, dan modal detail (read-only).
+// v41: Daftar Rekening admin — redesign premium mengikuti mockup user
+// (kartu rekening, bukan tabel): 4 kartu ringkasan (Total Rekening,
+// Total Saldo, Status Beku, Menunggu OTP/Sinkron), grid kartu premium
+// 2 kolom di desktop / 1 kolom di HP, tiap kartu: tile channel + nomor
+// tersamar + ikon salin, pill status, badge provider + label, kotak
+// SALDO + TERAKHIR TRANSAKSI, baris MEMBER, baris TERAKHIR SINKRON +
+// DITAMBAHKAN, tombol Sinkron (sync manual per rekening) + Detail.
+// Modal detail read-only tidak diubah (v40, lolos verifikasi).
 // Hanya nomor tersamar yang tampil; kredensial tidak pernah dikirim backend.
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { apiGet, friendlyError } from '../../../lib/api';
+import { useCallback, useEffect, useState } from 'react';
+import { apiGet, apiPost, friendlyError, isApiError } from '../../../lib/api';
 import { formatDateWIB, formatRupiah } from '../../../lib/format';
 import {
   Button,
@@ -17,10 +22,20 @@ import {
   Field,
   Modal,
   PageHeading,
+  Skeleton,
   StatusBadge,
-  TableSkeleton,
 } from '../../../components/ui';
-import { IconCard, IconUsers, IconWallet } from '../../../components/icons';
+import {
+  IconCalendar,
+  IconCard,
+  IconChevronRight,
+  IconClock,
+  IconCopy,
+  IconRefresh,
+  IconShieldCheck,
+  IconSnowflake,
+  IconWallet,
+} from '../../../components/icons';
 
 const PAGE_SIZE = 20;
 
@@ -56,6 +71,7 @@ type Summary = {
   dana_count: number;
   bca_count: number;
   pending_count: number;
+  frozen_count: number;
 };
 
 type MutationRow = {
@@ -65,6 +81,8 @@ type MutationRow = {
   description: string | null;
   sender: string | null;
 };
+
+type SyncMsg = { id: string; ok: boolean; text: string };
 
 /** Nomor halaman yang ditampilkan di kontrol pagination (jendela ±2). */
 function pageWindow(current: number, last: number | null): number[] {
@@ -95,6 +113,251 @@ function txAmount(m: { amount_cents: number; type: string }) {
   return <span style={{ color: '#047857', fontWeight: 600 }}>+{abs}</span>;
 }
 
+const SMALL_LABEL: React.CSSProperties = {
+  margin: 0,
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+  color: '#64748b',
+};
+
+/** Satu kartu rekening premium (mockup v41). */
+function RekeningCard({
+  a,
+  syncing,
+  msg,
+  copied,
+  onCopy,
+  onSync,
+  onDetail,
+}: {
+  a: AccountRow;
+  syncing: boolean;
+  msg: { ok: boolean; text: string } | null;
+  copied: boolean;
+  onCopy: () => void;
+  onSync: () => void;
+  onDetail: () => void;
+}) {
+  const ch = channelOf(a.provider);
+  return (
+    <article className="rekening-card">
+      {/* Baris atas: tile channel + nomor tersamar + badge | pill status */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            flex: 'none',
+            width: 52,
+            height: 52,
+            borderRadius: 14,
+            background: ch.color,
+            color: '#fff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 800,
+            fontSize: 20,
+          }}
+        >
+          {ch.initial}
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span
+              className="mono"
+              style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {a.masked || '—'}
+            </span>
+            <button
+              type="button"
+              onClick={onCopy}
+              title="Salin nomor tersamar"
+              aria-label="Salin nomor tersamar"
+              style={{
+                flex: 'none',
+                border: 'none',
+                background: 'transparent',
+                color: copied ? '#047857' : '#64748b',
+                cursor: 'pointer',
+                padding: 4,
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
+              <IconCopy size={15} />
+            </button>
+            {copied && (
+              <span style={{ fontSize: 12, color: '#047857', fontWeight: 600, flex: 'none' }}>Disalin</span>
+            )}
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, minWidth: 0 }}>
+            <span
+              style={{
+                display: 'inline-block',
+                border: `1px solid ${ch.color}`,
+                color: ch.color,
+                borderRadius: 999,
+                padding: '2px 10px',
+                fontSize: 12,
+                fontWeight: 700,
+                flex: 'none',
+              }}
+            >
+              {ch.label}
+            </span>
+            <span
+              className="muted"
+              style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {a.label || '—'}
+            </span>
+          </span>
+        </span>
+        {statusPill(a.status)}
+      </div>
+
+      {/* Kotak saldo + transaksi terakhir */}
+      <div
+        style={{
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: 12,
+          padding: '14px 16px',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 12,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <p style={SMALL_LABEL}>Saldo</p>
+          <p className="mono" style={{ margin: '4px 0 0', fontSize: 18, fontWeight: 800 }}>
+            {formatRupiah(a.balance_cents / 100)}
+          </p>
+        </div>
+        <div style={{ minWidth: 0, textAlign: 'right' }}>
+          <p style={SMALL_LABEL}>Terakhir Transaksi</p>
+          {a.last_tx ? (
+            <>
+              <p style={{ margin: '4px 0 0', fontSize: 13, fontWeight: 600 }}>
+                {formatDateWIB(a.last_tx.date, false)}
+              </p>
+              <p style={{ margin: '2px 0 0', fontSize: 13 }}>
+                {txAmount(a.last_tx)} <span className="muted">· {a.tx_count} mutasi</span>
+              </p>
+            </>
+          ) : (
+            <p style={{ margin: '4px 0 0', fontSize: 13 }}>
+              <span className="muted">↕ — · 0 mutasi</span>
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Member */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          minWidth: 0,
+        }}
+      >
+        <span style={{ ...SMALL_LABEL, flex: 'none' }}>Member</span>
+        <span style={{ minWidth: 0, textAlign: 'right' }}>
+          <Link href={`/admin/members/${a.member.id}`} style={{ fontWeight: 600, color: 'inherit', fontSize: 14 }}>
+            {a.member.name || '—'}
+          </Link>
+          <span className="mono muted" style={{ display: 'block', fontSize: 12, overflowWrap: 'anywhere' }}>
+            {a.member.email}
+          </span>
+        </span>
+      </div>
+
+      {/* Terakhir sinkron + Ditambahkan */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          minWidth: 0,
+        }}
+      >
+        <span style={{ minWidth: 0 }}>
+          <span style={{ ...SMALL_LABEL, display: 'block' }}>Terakhir Sinkron</span>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 4,
+              fontSize: 13,
+              fontWeight: 600,
+              color: a.last_synced_at ? '#047857' : '#94a3b8',
+            }}
+          >
+            <IconRefresh size={13} />
+            {a.last_synced_at ? formatDateWIB(a.last_synced_at, false) : '—'}
+          </span>
+        </span>
+        <span style={{ minWidth: 0, textAlign: 'right' }}>
+          <span style={{ ...SMALL_LABEL, display: 'block' }}>Ditambahkan</span>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 4,
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            <IconCalendar size={13} />
+            {a.created_at ? formatDateWIB(a.created_at, false) : '—'}
+          </span>
+        </span>
+      </div>
+
+      {/* Aksi: Sinkron + Detail */}
+      <div
+        style={{
+          borderTop: '1px solid var(--line, #e2e8f0)',
+          paddingTop: 14,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <Button variant="outline" className="rek-neutral" disabled={syncing} onClick={onSync}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <IconRefresh size={15} />
+            {syncing ? 'Menyinkronkan…' : 'Sinkron'}
+          </span>
+        </Button>
+        <Button variant="outline" onClick={onDetail}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            Detail
+            <IconChevronRight size={15} />
+          </span>
+        </Button>
+      </div>
+      {msg && (
+        <p
+          style={{ margin: 0, fontSize: 13, color: msg.ok ? '#047857' : '#dc2626' }}
+          role={msg.ok ? 'status' : 'alert'}
+        >
+          {msg.text}
+        </p>
+      )}
+    </article>
+  );
+}
+
 export default function AdminAccountsPage() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -111,6 +374,9 @@ export default function AdminAccountsPage() {
   const [mutations, setMutations] = useState<MutationRow[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<SyncMsg | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Debounce pencarian supaya tidak request per ketikan.
   useEffect(() => {
@@ -118,24 +384,35 @@ export default function AdminAccountsPage() {
     return () => clearTimeout(t);
   }, [query]);
 
-  // Filter + sortir + pagination server-side.
+  // Filter + sortir + pagination server-side. `silent` = refresh latar
+  // (mis. sesudah sync manual) tanpa menampilkan skeleton penuh.
+  const loadAccounts = useCallback(
+    (silent = false) => {
+      if (!silent) setLoading(true);
+      setError(null);
+      const params = new URLSearchParams({ page: String(page), sort });
+      if (debouncedQuery) params.set('q', debouncedQuery);
+      if (providerFilter) params.set('provider', providerFilter);
+      if (statusFilter) params.set('status', statusFilter);
+      apiGet<any>(`/api/v1/admin/accounts?${params.toString()}`)
+        .then((d) => {
+          const list = Array.isArray(d) ? d : d?.accounts ?? [];
+          const arr: AccountRow[] = Array.isArray(list) ? list : [];
+          setAccounts(arr);
+          setTotalCount(typeof d?.total_count === 'number' ? d.total_count : null);
+          if (d?.summary) setSummary(d.summary);
+          // Bila modal Detail terbuka, segarkan barisnya dari data terbaru.
+          setSelected((cur) => (cur ? arr.find((x) => x.id === cur.id) ?? cur : null));
+        })
+        .catch((err) => setError(friendlyError(err)))
+        .finally(() => setLoading(false));
+    },
+    [page, debouncedQuery, providerFilter, statusFilter, sort],
+  );
+
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams({ page: String(page), sort });
-    if (debouncedQuery) params.set('q', debouncedQuery);
-    if (providerFilter) params.set('provider', providerFilter);
-    if (statusFilter) params.set('status', statusFilter);
-    apiGet<any>(`/api/v1/admin/accounts?${params.toString()}`)
-      .then((d) => {
-        const list = Array.isArray(d) ? d : d?.accounts ?? [];
-        setAccounts(Array.isArray(list) ? list : []);
-        setTotalCount(typeof d?.total_count === 'number' ? d.total_count : null);
-        if (d?.summary) setSummary(d.summary);
-      })
-      .catch((err) => setError(friendlyError(err)))
-      .finally(() => setLoading(false));
-  }, [page, debouncedQuery, providerFilter, statusFilter, sort]);
+    loadAccounts();
+  }, [loadAccounts]);
 
   const lastPage = totalCount !== null ? Math.max(1, Math.ceil(totalCount / PAGE_SIZE)) : null;
   const hasNext = lastPage !== null ? page < lastPage : accounts.length >= PAGE_SIZE;
@@ -177,6 +454,49 @@ export default function AdminAccountsPage() {
     setDetailError(null);
   }
 
+  async function copyMasked(id: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback bila Clipboard API tidak tersedia (konteks non-HTTPS).
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+      } catch {
+        /* abaikan — tombol tetap memberi umpan balik visual */
+      }
+      document.body.removeChild(ta);
+    }
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+  }
+
+  async function syncAccountRow(row: AccountRow) {
+    if (syncingId) return;
+    setSyncingId(row.id);
+    setSyncMsg(null);
+    try {
+      const d = await apiPost<any>(`/api/v1/admin/accounts/${row.id}/sync`, {});
+      const text =
+        typeof d?.message === 'string' && d.message ? d.message : 'Sinkronisasi selesai.';
+      setSyncMsg({ id: row.id, ok: true, text });
+      loadAccounts(true);
+    } catch (e) {
+      const code =
+        isApiError(e) && e.code ? e.code : isApiError(e) ? `HTTP ${e.status}` : 'tak dikenal';
+      setSyncMsg({
+        id: row.id,
+        ok: false,
+        text: `Gagal sinkronisasi (${code}): ${friendlyError(e)}`,
+      });
+    } finally {
+      setSyncingId(null);
+    }
+  }
+
   const selectedChannel = selected ? channelOf(selected.provider) : null;
 
   return (
@@ -189,107 +509,146 @@ export default function AdminAccountsPage() {
       <ErrorBanner message={error} onClose={() => setError(null)} />
 
       <div className="stat-grid" style={{ marginBottom: 16 }}>
-        <div className="stat">
-          <span className="stat-icon"><IconWallet /></span>
+        <div className="stat stat-right">
+          <span className="stat-icon icon-slate"><IconWallet /></span>
           <div className="stat-body">
             <p className="stat-label">Total Rekening</p>
             <p className="stat-value">{summary ? summary.total_accounts : '—'}</p>
-            <p className="stat-sub">DANA {summary?.dana_count ?? '—'} · BCA {summary?.bca_count ?? '—'}</p>
+            <p className="stat-sub">Terdaftar di sistem</p>
           </div>
         </div>
-        <div className="stat">
+        <div className="stat stat-right">
           <span className="stat-icon"><IconCard /></span>
           <div className="stat-body">
             <p className="stat-label">Total Saldo</p>
-            <p className="stat-value" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20 }}>
+            <p
+              className="stat-value"
+              style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: '#047857' }}
+            >
               {summary ? formatRupiah(summary.total_balance_cents / 100) : '—'}
             </p>
-            <p className="stat-sub">Saldo terakhir dari sync</p>
+            <p className="stat-sub">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#047857' }}>
+                <IconShieldCheck size={12} />
+                Real-time
+              </span>
+            </p>
           </div>
         </div>
-        <div className="stat">
-          <span className="stat-icon" style={{ background: '#e8f3fe' }}>
-            <span style={{ color: '#108ee9', fontWeight: 800, fontSize: 16 }}>D</span>
-          </span>
+        <div className="stat stat-right">
+          <span className="stat-icon icon-slate"><IconSnowflake /></span>
           <div className="stat-body">
-            <p className="stat-label">Rekening DANA</p>
-            <p className="stat-value">{summary ? summary.dana_count : '—'}</p>
-            <p className="stat-sub">Dompet digital DANA</p>
+            <p className="stat-label">Status Beku</p>
+            <p className="stat-value">{summary ? summary.frozen_count : '—'}</p>
+            <p className="stat-sub">Perlu verifikasi ulang</p>
           </div>
         </div>
-        <div className="stat">
-          <span className="stat-icon" style={{ background: '#e8effc' }}>
-            <span style={{ color: '#005baa', fontWeight: 800, fontSize: 16 }}>B</span>
-          </span>
+        <div className="stat stat-right">
+          <span className="stat-icon icon-amber"><IconClock /></span>
           <div className="stat-body">
-            <p className="stat-label">Rekening BCA</p>
-            <p className="stat-value">{summary ? summary.bca_count : '—'}</p>
-            <p className="stat-sub">KlikBCA / BCA</p>
-          </div>
-        </div>
-        <div className="stat">
-          <span className="stat-icon"><IconUsers /></span>
-          <div className="stat-body">
-            <p className="stat-label">Menunggu</p>
-            <p className="stat-value">{summary ? summary.pending_count : '—'}</p>
-            <p className="stat-sub">Rekening belum diotorisasi</p>
+            <p className="stat-label">Menunggu OTP/Sinkron</p>
+            <p className="stat-value" style={{ color: '#b45309' }}>
+              {summary ? summary.pending_count : '—'}
+            </p>
+            <p className="stat-sub" style={{ color: '#b45309' }}>Menunggu koneksi</p>
           </div>
         </div>
       </div>
 
-      <Card
-        title="Daftar Rekening"
-        subtitle={`${totalLabel} · Halaman ${page} · ${PAGE_SIZE} per halaman`}
-        actions={
+      <Card>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 10,
+            marginBottom: 4,
+          }}
+        >
+          <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Daftar Rekening</h3>
+          <span
+            style={{
+              display: 'inline-block',
+              background: '#d1fae5',
+              color: '#047857',
+              border: '1px solid #a7f3d0',
+              borderRadius: 999,
+              padding: '4px 12px',
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            {totalCount ?? accounts.length} Rekening
+          </span>
+        </div>
+        <p className="muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
+          {totalLabel} · Halaman {page} · {PAGE_SIZE} per halaman
+        </p>
+        <div style={{ marginBottom: 16 }}>
           <Button variant="outline" onClick={clearFilters}>
-            Reset filter
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <IconRefresh size={15} />
+              Reset filter
+            </span>
           </Button>
-        }
-      >
-        <div className="toolbar" style={{ marginBottom: 12 }}>
-          <Field label="Cari nomor / nama / email">
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => { setQuery(e.target.value); resetToFirstPage(); }}
-              placeholder="Cari nomor, nama, atau email…"
-            />
-          </Field>
-          <Field label="Jenis">
-            <select
-              value={providerFilter}
-              onChange={(e) => { setProviderFilter(e.target.value); resetToFirstPage(); }}
-            >
-              <option value="">Semua jenis</option>
-              <option value="dana">DANA</option>
-              <option value="bca">BCA</option>
-            </select>
-          </Field>
-          <Field label="Status">
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); resetToFirstPage(); }}
-            >
-              <option value="">Semua status</option>
-              <option value="active">Aktif</option>
-              <option value="pending">Menunggu</option>
-              <option value="frozen">Beku</option>
-            </select>
-          </Field>
-          <Field label="Urutkan">
-            <select
-              value={sort}
-              onChange={(e) => { setSort(e.target.value); resetToFirstPage(); }}
-            >
-              <option value="created">Terbaru ditambahkan</option>
-              <option value="synced">Terakhir sinkron</option>
-              <option value="balance">Saldo terbesar</option>
-            </select>
-          </Field>
+        </div>
+
+        <div className="rekening-filters">
+          <div className="field-wide">
+            <Field label="Cari nomor / nama / email">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); resetToFirstPage(); }}
+                placeholder="Cari nomor, nama, atau email…"
+              />
+            </Field>
+          </div>
+          <div>
+            <Field label="Jenis">
+              <select
+                value={providerFilter}
+                onChange={(e) => { setProviderFilter(e.target.value); resetToFirstPage(); }}
+              >
+                <option value="">Semua jenis</option>
+                <option value="dana">DANA</option>
+                <option value="bca">BCA</option>
+              </select>
+            </Field>
+          </div>
+          <div>
+            <Field label="Status">
+              <select
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); resetToFirstPage(); }}
+              >
+                <option value="">Semua status</option>
+                <option value="active">Aktif</option>
+                <option value="pending">Menunggu</option>
+                <option value="frozen">Beku</option>
+              </select>
+            </Field>
+          </div>
+          <div className="field-wide">
+            <Field label="Urutkan">
+              <select
+                value={sort}
+                onChange={(e) => { setSort(e.target.value); resetToFirstPage(); }}
+              >
+                <option value="created">Terbaru ditambahkan</option>
+                <option value="synced">Terakhir sinkron</option>
+                <option value="balance">Saldo terbesar</option>
+              </select>
+            </Field>
+          </div>
         </div>
 
         {loading ? (
-          <TableSkeleton rows={5} />
+          <div className="rekening-grid" aria-label="Memuat rekening">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="rekening-skeleton" />
+            ))}
+          </div>
         ) : accounts.length === 0 ? (
           <EmptyState
             title={filtersActive ? 'Tidak ada yang cocok' : 'Belum ada rekening'}
@@ -307,125 +666,19 @@ export default function AdminAccountsPage() {
             }
           />
         ) : (
-          <div className="table-wrap rekening-wrap">
-            <table className="table-fixed mobile-card-table rekening-table">
-              <colgroup>
-                <col style={{ width: 188 }} />
-                <col style={{ width: 84 }} />
-                <col style={{ width: 180 }} />
-                <col style={{ width: 152 }} />
-                <col style={{ width: 140 }} />
-                <col style={{ width: 100 }} />
-                <col style={{ width: 112 }} />
-                <col style={{ width: 108 }} />
-                <col style={{ width: 104 }} />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Rekening</th>
-                  <th>Jenis</th>
-                  <th>Member</th>
-                  <th className="num">Saldo</th>
-                  <th>Terakhir Transaksi</th>
-                  <th>Terakhir Sinkron</th>
-                  <th>Status</th>
-                  <th>Ditambahkan</th>
-                  <th>Detail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((a) => {
-                  const ch = channelOf(a.provider);
-                  return (
-                    <tr key={a.id}>
-                      <td data-label="Rekening">
-                        <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-                          <span
-                            aria-hidden="true"
-                            style={{
-                              flex: 'none',
-                              width: 36,
-                              height: 36,
-                              borderRadius: 10,
-                              background: ch.color,
-                              color: '#fff',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 800,
-                              fontSize: 15,
-                            }}
-                          >
-                            {ch.initial}
-                          </span>
-                          <span style={{ minWidth: 0 }}>
-                            <span className="mono" style={{ display: 'block', fontWeight: 600, fontSize: 14 }}>
-                              {a.masked || '—'}
-                            </span>
-                            <span className="muted" style={{ display: 'block', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {a.label || '—'}
-                            </span>
-                          </span>
-                        </span>
-                      </td>
-                      <td data-label="Jenis">
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            border: `1px solid ${ch.color}`,
-                            color: ch.color,
-                            borderRadius: 999,
-                            padding: '2px 10px',
-                            fontSize: 12,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {ch.label}
-                        </span>
-                      </td>
-                      <td data-label="Member">
-                        <Link href={`/admin/members/${a.member.id}`} style={{ fontWeight: 600, color: 'inherit' }}>
-                          {a.member.name || '—'}
-                        </Link>
-                        <span className="muted rekening-email" style={{ display: 'block', fontSize: 12 }}>
-                          {a.member.email}
-                        </span>
-                      </td>
-                      <td data-label="Saldo" className="num mono" style={{ fontWeight: 700 }}>
-                        {formatRupiah(a.balance_cents / 100)}
-                      </td>
-                      <td data-label="Terakhir Transaksi" style={{ whiteSpace: 'normal' }}>
-                        {a.last_tx ? (
-                          <>
-                            <span style={{ display: 'block', fontSize: 13 }}>
-                              {formatDateWIB(a.last_tx.date, false)}
-                            </span>
-                            <span style={{ display: 'block', fontSize: 13 }}>
-                              {txAmount(a.last_tx)}{' '}
-                              <span className="muted">· {a.tx_count} mutasi</span>
-                            </span>
-                          </>
-                        ) : (
-                          <span className="muted" style={{ fontSize: 13 }}>— · 0 mutasi</span>
-                        )}
-                      </td>
-                      <td data-label="Terakhir Sinkron">
-                        {a.last_synced_at ? formatDateWIB(a.last_synced_at, false) : '—'}
-                      </td>
-                      <td data-label="Status">{statusPill(a.status)}</td>
-                      <td data-label="Ditambahkan">
-                        {a.created_at ? formatDateWIB(a.created_at, false) : '—'}
-                      </td>
-                      <td data-label="Detail">
-                        <Button variant="outline" onClick={() => openDetail(a)} disabled={false}>
-                          Detail
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="rekening-grid">
+            {accounts.map((a) => (
+              <RekeningCard
+                key={a.id}
+                a={a}
+                syncing={syncingId === a.id}
+                msg={syncMsg && syncMsg.id === a.id ? syncMsg : null}
+                copied={copiedId === a.id}
+                onCopy={() => copyMasked(a.id, a.masked || '')}
+                onSync={() => syncAccountRow(a)}
+                onDetail={() => openDetail(a)}
+              />
+            ))}
           </div>
         )}
 

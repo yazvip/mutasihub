@@ -1,8 +1,12 @@
 package http
 
 import (
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
+
+	syncpkg "mutasi-hub/internal/sync"
 )
 
 // v40: helper murni daftar rekening — tanpa DB (pola repo: tidak ada sqlmock).
@@ -103,5 +107,46 @@ func TestAccountListWhere(t *testing.T) {
 		if !strings.Contains(frozenAccountExpr, frag) {
 			t.Errorf("frozenAccountExpr tidak memuat %q", frag)
 		}
+	}
+}
+
+// v41: ringkasan harus memuat frozen_count dari ekspresi beku yang SAMA
+// dengan flag per baris — bila ekspresi berubah di satu tempat saja,
+// angka kartu "Status Beku" dan pill Beku di daftar akan berbeda.
+func TestAdminAccountsSummarySQLFrozen(t *testing.T) {
+	sql := adminAccountsSummarySQL()
+	if !strings.Contains(sql, frozenAccountExpr) {
+		t.Fatal("summary SQL tidak memakai frozenAccountExpr — frozen_count akan berbeda definisi dari pill Beku")
+	}
+	if !strings.Contains(sql, "FROM linked_accounts la") {
+		t.Fatal("summary SQL harus memakai alias la (dipakai frozenAccountExpr)")
+	}
+}
+
+// v41: pemetaan error sync manual — sentinel → status/kode yang jujur.
+func TestMapSyncAccountError(t *testing.T) {
+	cases := []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{syncpkg.ErrSyncAccountNotFound, http.StatusNotFound, "not_found"},
+		{syncpkg.ErrSyncAccountFrozen, http.StatusConflict, "account_frozen"},
+		{syncpkg.ErrSyncAccountInactive, http.StatusConflict, "account_inactive"},
+		{syncpkg.ErrSyncNoSubscription, http.StatusConflict, "subscription_inactive"},
+		{syncpkg.ErrSyncNotBound, http.StatusConflict, "account_not_bound"},
+		{syncpkg.ErrSyncBCAGuard, http.StatusConflict, "bca_sync_rejected"},
+		{errors.New("connecta timeout"), http.StatusServiceUnavailable, "provider_error"},
+	}
+	for _, c := range cases {
+		status, code, msg := mapSyncAccountError(c.err)
+		if status != c.status || code != c.code || msg == "" {
+			t.Errorf("mapSyncAccountError(%v) = (%d,%q,%q), want (%d,%q, non-empty)", c.err, status, code, msg, c.status, c.code)
+		}
+	}
+	// Error sentinel yang di-wrap (%w) tetap terpetakan.
+	wrapped := errors.Join(syncpkg.ErrSyncBCAGuard, errors.New("tambahan"))
+	if _, code, _ := mapSyncAccountError(wrapped); code != "bca_sync_rejected" {
+		t.Errorf("mapSyncAccountError(wrapped bca guard) = %q, want bca_sync_rejected", code)
 	}
 }

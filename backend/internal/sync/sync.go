@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -50,6 +51,29 @@ type Syncer struct {
 	running  bool
 	lastRun  time.Time
 	lastErr  string
+}
+
+// Sentinel errors untuk sync manual per-rekening (v41): dipetakan handler
+// HTTP ke status/kode yang jujur. PollOnce hanya me-log error apa adanya,
+// jadi sentinel ini tidak mengubah perilaku worker latar.
+var (
+	ErrSyncAccountNotFound = errors.New("sync: account not found")
+	ErrSyncAccountFrozen   = errors.New("sync: account frozen")
+	ErrSyncAccountInactive = errors.New("sync: account not active")
+	ErrSyncNoSubscription  = errors.New("sync: no active subscription")
+	ErrSyncNotBound        = errors.New("sync: dana account not bound")
+	ErrSyncBCAGuard        = errors.New("sync: bca guard")
+)
+
+// SyncAccountResult — hasil sync manual satu rekening: keadaan terbaru
+// pasca-sync supaya frontend bisa me-refresh kartu tanpa menebak.
+type SyncAccountResult struct {
+	AccountID    string
+	DBStatus     string // status DB apa adanya (handler yang memetakan ke status tampil)
+	Frozen       bool
+	BalanceCents int64
+	LastSyncedAt time.Time // zero bila belum pernah sinkron
+	NewMutations int
 }
 
 // New creates a Syncer. encKey may be nil (then credential decryption is skipped).
@@ -180,22 +204,135 @@ func (s *Syncer) PollOnce(ctx context.Context) {
 	}
 }
 
-func (s *Syncer) syncAccount(ctx context.Context, a *accountRow) error {
+// countMutations menghitung jumlah mutasi tersimpan satu rekening
+// (dipakai sync manual untuk menghitung mutasi baru = sesudah - sebelum).
+func (s *Syncer) countMutations(ctx context.Context, accountID string) (int, error) {
+	var n int
+	err := s.store.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM mutations WHERE linked_account_id=?`, accountID).Scan(&n)
+	return n, err
+}
+
+type accountCredential struct {
+	Phone     string `json:"phone"`
+	AccountNo string `json:"account_no"`
+	UserID    string `json:"user_id"`
+	Pin       string `json:"pin"`
+}
+
+// decryptCredential mendekripsi + mem-parse kredensial satu rekening.
+// Satu jalur dipakai syncAccount (worker) dan SyncAccountByID (manual).
+func (s *Syncer) decryptCredential(a *accountRow) (accountCredential, error) {
+	var cred accountCredential
 	if !a.Credential.Valid || a.Credential.String == "" || len(s.encKey) == 0 {
-		return fmt.Errorf("no decryptable credential for account %s", a.ID)
+		return cred, fmt.Errorf("no decryptable credential for account %s", a.ID)
 	}
 	plain, err := crypto.Decrypt(s.encKey, a.Credential.String)
 	if err != nil {
-		return fmt.Errorf("decrypt credential: %w", err)
-	}
-	var cred struct {
-		Phone     string `json:"phone"`
-		AccountNo string `json:"account_no"`
-		UserID    string `json:"user_id"`
-		Pin       string `json:"pin"`
+		return cred, fmt.Errorf("decrypt credential: %w", err)
 	}
 	if err := json.Unmarshal([]byte(plain), &cred); err != nil {
-		return fmt.Errorf("parse credential: %w", err)
+		return cred, fmt.Errorf("parse credential: %w", err)
+	}
+	return cred, nil
+}
+
+// SyncAccountByID menjalankan sync manual untuk SATU rekening (tombol
+// Sinkron di kartu Daftar Rekening admin). Berbeda dengan PollOnce, sync
+// manual MENGABAIKAN jeda api_delay_minutes — admin memintanya secara
+// eksplisit — tapi tetap menolak rekening beku (sync dijeda karena
+// max_accounts paket), rekening tidak aktif, dan rekening tanpa langganan
+// aktif. Untuk DANA pending, binding diperiksa dulu: bila belum
+// ter-binding, kembalikan ErrSyncNotBound secara jujur (syncDANA diam
+// saja bila belum bound — jangan pura-pura sinkron).
+func (s *Syncer) SyncAccountByID(ctx context.Context, id string) (*SyncAccountResult, error) {
+	a := &accountRow{}
+	err := s.store.DB.QueryRowContext(ctx, `
+		SELECT la.id, la.member_id, la.provider, la.status, la.phone_masked, la.account_masked,
+		       la.credential_ciphertext, la.last_synced_at,
+		       COALESCE(p.callback_enabled, 0) = 1, m.callback_url, m.callback_secret,
+		       COALESCE(p.api_delay_minutes, 10), COALESCE(p.max_accounts, 2), la.created_at
+		FROM linked_accounts la
+		JOIN members m ON m.id = la.member_id
+		LEFT JOIN subscriptions sub ON sub.member_id = la.member_id AND sub.status = 'active' AND sub.expires_at > NOW()
+		LEFT JOIN plans p ON p.id = sub.plan_id
+		WHERE la.id = ?`, id).Scan(&a.ID, &a.MemberID, &a.Provider, &a.Status, &a.PhoneMask, &a.AcctMask,
+		&a.Credential, &a.LastSynced, &a.CallbackFlag, &a.CallbackURL, &a.CallbackSecret, &a.DelayMin,
+		&a.MaxAccounts, &a.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrSyncAccountNotFound
+		}
+		return nil, err
+	}
+	if a.Status != "active" && a.Status != "pending" {
+		return nil, ErrSyncAccountInactive
+	}
+	var hasSub int
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM subscriptions
+		WHERE member_id=? AND status='active' AND expires_at > NOW()`, a.MemberID).Scan(&hasSub); err != nil {
+		return nil, err
+	}
+	if hasSub == 0 {
+		return nil, ErrSyncNoSubscription
+	}
+	// Beku? Hitung dengan helper yang sama seperti PollOnce.
+	candRows, err := s.store.DB.QueryContext(ctx, `SELECT id, created_at FROM linked_accounts
+		WHERE member_id=? AND status IN ('active','pending') ORDER BY created_at ASC, id ASC`, a.MemberID)
+	if err != nil {
+		return nil, err
+	}
+	cands := []domain.FreezeCandidate{}
+	for candRows.Next() {
+		var c domain.FreezeCandidate
+		if err := candRows.Scan(&c.ID, &c.CreatedAt); err == nil {
+			cands = append(cands, c)
+		}
+	}
+	candRows.Close()
+	frozen := domain.FrozenAccountIDs(cands, a.MaxAccounts)[a.ID]
+	if frozen {
+		return nil, ErrSyncAccountFrozen
+	}
+	if strings.ToUpper(a.Provider) == "DANA" && a.Status == "pending" {
+		cred, err := s.decryptCredential(a)
+		if err != nil {
+			return nil, err
+		}
+		bound, err := s.danaBound(ctx, cred.Phone)
+		if err != nil {
+			return nil, err
+		}
+		if !bound {
+			return nil, ErrSyncNotBound
+		}
+	}
+	before, _ := s.countMutations(ctx, a.ID)
+	if err := s.syncAccount(ctx, a); err != nil {
+		return nil, err
+	}
+	after, _ := s.countMutations(ctx, a.ID)
+	// Baca ulang keadaan terbaru (saldo, terakhir sinkron, status).
+	var balance int64
+	var lastSynced sql.NullTime
+	var dbStatus string
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT balance_cents, last_synced_at, status
+		FROM linked_accounts WHERE id=?`, a.ID).Scan(&balance, &lastSynced, &dbStatus); err != nil {
+		return nil, err
+	}
+	res := &SyncAccountResult{
+		AccountID: a.ID, DBStatus: dbStatus, Frozen: frozen,
+		BalanceCents: balance, NewMutations: after - before,
+	}
+	if lastSynced.Valid {
+		res.LastSyncedAt = lastSynced.Time
+	}
+	return res, nil
+}
+
+func (s *Syncer) syncAccount(ctx context.Context, a *accountRow) error {
+	cred, err := s.decryptCredential(a)
+	if err != nil {
+		return err
 	}
 	switch strings.ToUpper(a.Provider) {
 	case "DANA":
@@ -317,7 +454,7 @@ func (s *Syncer) syncBCA(ctx context.Context, a *accountRow, accountNo string) e
 		WHERE provider='BCA' AND status IN ('active','pending')`).Scan(&bcaCount); err == nil && bcaCount > 1 {
 		s.log.Printf("sync: BCA guard: %d akun BCA aktif, sinkronisasi BCA ditolak", bcaCount)
 		s.store.Audit(ctx, "sync", a.MemberID, "bca_sync_rejected", "lebih dari 1 akun BCA aktif di platform", "")
-		return fmt.Errorf("sync: bca guard: %d akun BCA aktif, tolak sinkronisasi", bcaCount)
+		return fmt.Errorf("%w: %d akun BCA aktif, tolak sinkronisasi", ErrSyncBCAGuard, bcaCount)
 	}
 	txs, _, err := s.connecta.BCAMutations(ctx, 25, "")
 	if err != nil {

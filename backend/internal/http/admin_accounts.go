@@ -2,11 +2,13 @@ package http
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"mutasi-hub/internal/crypto"
+	syncpkg "mutasi-hub/internal/sync"
 )
 
 // v40: Daftar Rekening admin — daftar semua rekening terhubung (DANA/BCA)
@@ -53,9 +55,9 @@ func accountSortClause(sort string) (string, bool) {
 }
 
 type adminAccountLastTx struct {
-	Date       string `json:"date"`
+	Date        string `json:"date"`
 	AmountCents int64  `json:"amount_cents"`
-	Type       string `json:"type"`
+	Type        string `json:"type"`
 }
 
 // accountListWhere menyusun klausa WHERE (+ argumen) untuk daftar rekening
@@ -98,6 +100,18 @@ func firstQuery(q map[string][]string, key string) string {
 	return ""
 }
 
+// adminAccountsSummarySQL — query ringkasan header daftar rekening.
+// frozen_count memakai frozenAccountExpr yang SAMA dengan flag beku per
+// baris, supaya angka kartu "Status Beku" selalu cocok dengan pill Beku
+// di daftar (angka mockup v41 — Beku 1 — adalah ilustrasi; yang live
+// adalah hitungan nyata ini).
+func adminAccountsSummarySQL() string {
+	return `SELECT COUNT(*), COALESCE(SUM(balance_cents),0),
+		COALESCE(SUM(provider='DANA'),0), COALESCE(SUM(provider='BCA'),0), COALESCE(SUM(status='pending'),0),
+		COALESCE(SUM(` + frozenAccountExpr + `),0)
+		FROM linked_accounts la`
+}
+
 func (s *Server) handleAdminListAccounts(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
@@ -129,17 +143,16 @@ func (s *Server) handleAdminListAccounts(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Ringkasan header (global, tanpa filter): total rekening, total saldo,
-	// jumlah DANA, jumlah BCA, jumlah pending.
+	// jumlah DANA, jumlah BCA, jumlah pending, jumlah beku.
 	var summary struct {
-		Total     int
-		TotalBal  int64
-		Dana      int
-		BCA       int
-		Pending   int
+		Total    int
+		TotalBal int64
+		Dana     int
+		BCA      int
+		Pending  int
+		Frozen   int
 	}
-	_ = s.store.DB.QueryRowContext(r.Context(), `SELECT COUNT(*), COALESCE(SUM(balance_cents),0),
-		COALESCE(SUM(provider='DANA'),0), COALESCE(SUM(provider='BCA'),0), COALESCE(SUM(status='pending'),0)
-		FROM linked_accounts`).Scan(&summary.Total, &summary.TotalBal, &summary.Dana, &summary.BCA, &summary.Pending)
+	_ = s.store.DB.QueryRowContext(r.Context(), adminAccountsSummarySQL()).Scan(&summary.Total, &summary.TotalBal, &summary.Dana, &summary.BCA, &summary.Pending, &summary.Frozen)
 
 	listArgs := append(append([]any{}, args...), size, offset)
 	rows, err := s.store.DB.QueryContext(r.Context(), `SELECT la.id, la.provider, la.label,
@@ -200,7 +213,7 @@ func (s *Server) handleAdminListAccounts(w http.ResponseWriter, r *http.Request)
 		}
 		out = append(out, map[string]any{
 			"id": id, "provider": provider, "label": label, "masked": masked,
-			"member": map[string]any{"id": memberID, "name": memberName, "email": crypto.MaskEmail(memberEmail)},
+			"member":        map[string]any{"id": memberID, "name": memberName, "email": crypto.MaskEmail(memberEmail)},
 			"balance_cents": balance, "status": accountDisplayStatus(dbStatus, frozen == 1),
 			"last_synced_at": lastSyncedAt, "created_at": createdAt, "authorized_at": authorizedAt,
 			"last_tx": lastTx, "tx_count": txCount,
@@ -211,6 +224,7 @@ func (s *Server) handleAdminListAccounts(w http.ResponseWriter, r *http.Request)
 		"summary": map[string]any{
 			"total_accounts": summary.Total, "total_balance_cents": summary.TotalBal,
 			"dana_count": summary.Dana, "bca_count": summary.BCA, "pending_count": summary.Pending,
+			"frozen_count": summary.Frozen,
 		},
 	})
 }
@@ -263,7 +277,7 @@ func (s *Server) handleAdminGetAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	account := map[string]any{
 		"id": accID, "provider": provider, "label": label, "masked": masked,
-		"member": map[string]any{"id": memberID, "name": memberName, "email": crypto.MaskEmail(memberEmail)},
+		"member":        map[string]any{"id": memberID, "name": memberName, "email": crypto.MaskEmail(memberEmail)},
 		"balance_cents": balance, "status": accountDisplayStatus(dbStatus, frozen == 1),
 		"last_synced_at": lastSyncedAt, "created_at": createdAt, "authorized_at": authorizedAt,
 	}
@@ -292,4 +306,63 @@ func (s *Server) handleAdminGetAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"account": account, "mutations": muts})
+}
+
+// mapSyncAccountError memetakan error sync manual ke status HTTP + kode
+// + pesan Indonesia (pola repo: pesan ramah untuk admin, kode untuk
+// frontend). Error provider yang tidak dikenal → 503 provider_error
+// (bukan 502, pola v28).
+func mapSyncAccountError(err error) (status int, code, message string) {
+	switch {
+	case errors.Is(err, syncpkg.ErrSyncAccountNotFound):
+		return http.StatusNotFound, "not_found", "rekening tidak ditemukan"
+	case errors.Is(err, syncpkg.ErrSyncAccountFrozen):
+		return http.StatusConflict, "account_frozen", "rekening dibekukan karena paket member — sinkronisasi dijeda sampai paket dinaikkan atau rekening dilepas"
+	case errors.Is(err, syncpkg.ErrSyncAccountInactive):
+		return http.StatusConflict, "account_inactive", "rekening tidak aktif sehingga tidak bisa disinkronkan"
+	case errors.Is(err, syncpkg.ErrSyncNoSubscription):
+		return http.StatusConflict, "subscription_inactive", "member tidak punya langganan aktif sehingga rekening tidak bisa disinkronkan"
+	case errors.Is(err, syncpkg.ErrSyncNotBound):
+		return http.StatusConflict, "account_not_bound", "rekening DANA belum terhubung — member harus menyelesaikan otorisasi DANA dulu"
+	case errors.Is(err, syncpkg.ErrSyncBCAGuard):
+		return http.StatusConflict, "bca_sync_rejected", "sinkronisasi BCA ditolak: lebih dari 1 akun BCA aktif di platform"
+	default:
+		return http.StatusServiceUnavailable, "provider_error", "penyedia gagal merespons, coba lagi sebentar"
+	}
+}
+
+// handleAdminSyncAccount memicu sync manual SATU rekening (tombol
+// Sinkron di kartu Daftar Rekening, v41). Admin-only, diaudit.
+// Mengembalikan saldo + terakhir sinkron + status tampil + mutasi baru
+// pasca-sync; sync palsu tidak pernah dibuat — bila provider gagal,
+// error dipetakan jujur oleh mapSyncAccountError.
+func (s *Server) handleAdminSyncAccount(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	id := r.PathValue("id")
+	admin, _ := adminID(r)
+	res, err := s.syncer.SyncAccountByID(r.Context(), id)
+	if err != nil {
+		status, code, message := mapSyncAccountError(err)
+		s.audit(r, "admin", admin, "account_sync_failed", "rekening "+id+" ("+code+")")
+		writeErr(w, status, code, message)
+		return
+	}
+	s.audit(r, "admin", admin, "account_sync", "rekening "+id)
+	var lastSyncedAt any
+	if !res.LastSyncedAt.IsZero() {
+		lastSyncedAt = formatWIB(res.LastSyncedAt)
+	}
+	msg := "Sinkronisasi selesai: tidak ada mutasi baru."
+	if res.NewMutations == 1 {
+		msg = "Sinkronisasi selesai: 1 mutasi baru."
+	} else if res.NewMutations > 1 {
+		msg = "Sinkronisasi selesai: " + strconv.Itoa(res.NewMutations) + " mutasi baru."
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"account_id": res.AccountID, "status": accountDisplayStatus(res.DBStatus, res.Frozen),
+		"balance_cents": res.BalanceCents, "last_synced_at": lastSyncedAt,
+		"new_mutations": res.NewMutations, "message": msg,
+	})
 }
