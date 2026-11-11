@@ -129,6 +129,8 @@ func (s *Server) routes() {
 	m.HandleFunc("DELETE /api/v1/admin/plans/{id}", s.authAdmin(s.handleAdminDeletePlan))
 	m.HandleFunc("GET /api/v1/admin/members", s.authAdmin(s.handleAdminListMembers))
 	m.HandleFunc("GET /api/v1/admin/members/{id}", s.authAdmin(s.handleAdminGetMember))
+	m.HandleFunc("GET /api/v1/admin/accounts", s.authAdmin(s.handleAdminListAccounts))
+	m.HandleFunc("GET /api/v1/admin/accounts/{id}", s.authAdmin(s.handleAdminGetAccount))
 	m.HandleFunc("PUT /api/v1/admin/members/{id}", s.authAdmin(s.handleAdminUpdateMember))
 	m.HandleFunc("POST /api/v1/admin/members/{id}/reset-password", s.authAdmin(s.handleAdminResetMemberPassword))
 	m.HandleFunc("GET /api/v1/admin/settings", s.authAdmin(s.handleAdminGetSettings))

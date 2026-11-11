@@ -9,6 +9,7 @@ import {
   IconGear,
   IconMail,
   IconUsers,
+  IconWallet,
   IconZap,
 } from '../../components/icons';
 import { apiGet } from '../../lib/api';
@@ -23,6 +24,7 @@ const NAV = [
     items: [
       { href: '/admin/plans', label: 'Paket', icon: <IconBox /> },
       { href: '/admin/members', label: 'Member', icon: <IconUsers /> },
+      { href: '/admin/rekening', label: 'Rekening', icon: <IconWallet /> },
       { href: '/admin/announcements', label: 'Pengumuman', icon: <IconMail /> },
       { href: '/admin/email-templates', label: 'Template Email', icon: <IconMail /> },
     ],
