@@ -307,18 +307,18 @@ export default function AdminAccountsPage() {
             }
           />
         ) : (
-          <div className="table-wrap">
-            <table className="table-fixed mobile-card-table">
+          <div className="table-wrap rekening-wrap">
+            <table className="table-fixed mobile-card-table rekening-table">
               <colgroup>
-                <col style={{ width: '20%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '16%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '14%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '5%' }} />
+                <col style={{ width: 188 }} />
+                <col style={{ width: 84 }} />
+                <col style={{ width: 180 }} />
+                <col style={{ width: 152 }} />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 100 }} />
+                <col style={{ width: 112 }} />
+                <col style={{ width: 108 }} />
+                <col style={{ width: 104 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -387,7 +387,7 @@ export default function AdminAccountsPage() {
                         <Link href={`/admin/members/${a.member.id}`} style={{ fontWeight: 600, color: 'inherit' }}>
                           {a.member.name || '—'}
                         </Link>
-                        <span className="muted" style={{ display: 'block', fontSize: 12 }}>
+                        <span className="muted rekening-email" style={{ display: 'block', fontSize: 12 }}>
                           {a.member.email}
                         </span>
                       </td>
@@ -398,7 +398,7 @@ export default function AdminAccountsPage() {
                         {a.last_tx ? (
                           <>
                             <span style={{ display: 'block', fontSize: 13 }}>
-                              {formatDateWIB(a.last_tx.date, true)}
+                              {formatDateWIB(a.last_tx.date, false)}
                             </span>
                             <span style={{ display: 'block', fontSize: 13 }}>
                               {txAmount(a.last_tx)}{' '}
@@ -410,7 +410,7 @@ export default function AdminAccountsPage() {
                         )}
                       </td>
                       <td data-label="Terakhir Sinkron">
-                        {a.last_synced_at ? formatDateWIB(a.last_synced_at, true) : '—'}
+                        {a.last_synced_at ? formatDateWIB(a.last_synced_at, false) : '—'}
                       </td>
                       <td data-label="Status">{statusPill(a.status)}</td>
                       <td data-label="Ditambahkan">

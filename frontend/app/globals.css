@@ -581,6 +581,28 @@ tr:last-child td { border-bottom: none; }
 .table-fixed { table-layout: fixed; }
 .table-fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ===== v40b: tabel Daftar Rekening admin ===== */
+/* Akar cacat: colgroup % (20/8/16/11/14/11/8/7/5) + table-layout fixed
+   membuat kolom sempit (Detail 5% ≈ 47-60px, tombol ±72px) terpotong
+   ellipsis oleh .table-fixed td, sementara table width:100% membuat
+   .table-wrap tidak pernah bisa di-scroll (scrollWidth == clientWidth)
+   — dan header satu kata (DITAMBAHKAN) meluber ke kolom sebelah karena
+   th tanpa overflow. Perbaikan, HANYA di scope table.rekening-table:
+   lebar kolom piksel (jumlah = min-width tabel, 1168px) + padding header
+   diperkecil + ellipsis rapi untuk email + scrollbar wrap terlihat.
+   Di bawah min-width, tabel melebar melewati wrap sehingga scroll
+   horizontal .table-wrap aktif dan kolom Detail tidak pernah terpotong.
+   Aturan global `table { min-width: 640px }` dan .app-shell TIDAK diubah;
+   media query ≤640px di bawah (min-width: 0) tetap menang karena
+   spesifikasinya sama dan posisinya lebih akhir. */
+table.rekening-table { min-width: 1168px; }
+table.rekening-table th { padding: 10px 8px; overflow: hidden; text-overflow: ellipsis; }
+table.rekening-table td .rekening-email { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-wrap.rekening-wrap { scrollbar-width: thin; scrollbar-color: #94a3b8 #f1f5f9; }
+.table-wrap.rekening-wrap::-webkit-scrollbar { height: 8px; }
+.table-wrap.rekening-wrap::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 999px; }
+.table-wrap.rekening-wrap::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 999px; }
+
 /* ---------- Responsive ---------- */
 @media (min-width: 1024px) {
   .main-content { margin-left: 256px; width: calc(100% - 256px); }
@@ -1057,6 +1079,10 @@ html, body { overflow-x: clip; }
   /* P2-8: email ter-mask tampil utuh dan boleh membungkus, bukan
      terpotong ellipsis seperti di desktop (.table-fixed). */
   table.mobile-card-table td[data-label="Email"] { overflow-wrap: break-word; word-break: normal; }
+  /* v40b: email member di tabel Rekening — di kartu HP harus tampil utuh
+     dan membungkus (batalkan ellipsis desktop .rekening-email), sama
+     seperti P2-8 untuk kolom Email. */
+  table.rekening-table td .rekening-email { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; }
 }
 
 /* ===== v31-C: konsistensi desain ===== */
