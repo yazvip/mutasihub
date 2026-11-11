@@ -75,8 +75,8 @@ func TestResolveTemplate(t *testing.T) {
 func TestDefaultTemplatesRender(t *testing.T) {
 	s := noDBServer()
 	ctx := context.Background()
-	if len(defaultEmailTemplates) != 7 {
-		t.Fatalf("want 7 template default, got %d", len(defaultEmailTemplates))
+	if len(defaultEmailTemplates) != 8 {
+		t.Fatalf("want 8 template default, got %d", len(defaultEmailTemplates))
 	}
 	for _, def := range defaultEmailTemplates {
 		vars := s.sampleTemplateVars(def.Key)
@@ -108,13 +108,17 @@ func TestDefaultTemplatesRender(t *testing.T) {
 	}
 }
 
-// TestMigrationSeedMatchesDefaults menjaga seed migrasi 0017 tetap
-// sama dengan default kode: subjek + satu cuplikan khas tiap isi
-// harus muncul di file SQL.
+// TestMigrationSeedMatchesDefaults menjaga seed migrasi 0017 (+ 0018
+// untuk mutation_digest, v42b) tetap sama dengan default kode: subjek +
+// satu cuplikan khas tiap isi harus muncul di file SQL.
 func TestMigrationSeedMatchesDefaults(t *testing.T) {
 	sql, err := os.ReadFile("../../migrations/0017_email_templates_v39.sql")
 	if err != nil {
 		t.Fatalf("baca migrasi 0017: %v", err)
+	}
+	sql18, err := os.ReadFile("../../migrations/0018_mutation_notify_v42b.sql")
+	if err != nil {
+		t.Fatalf("baca migrasi 0018: %v", err)
 	}
 	snippets := map[string]string{
 		"email_verification":   "Terima kasih sudah mendaftar di MutasiHub",
@@ -124,15 +128,20 @@ func TestMigrationSeedMatchesDefaults(t *testing.T) {
 		"expiry_reminder_h3":   "3 hari lagi",
 		"expiry_reminder_h1":   "berakhir <strong>besok",
 		"subscription_expired": "telah berakhir pada",
+		"mutation_digest":      "Lihat di Dashboard",
 	}
 	for _, def := range defaultEmailTemplates {
-		if !strings.Contains(string(sql), "'"+def.Key+"'") {
+		seed := sql
+		if def.Key == "mutation_digest" {
+			seed = sql18
+		}
+		if !strings.Contains(string(seed), "'"+def.Key+"'") {
 			t.Fatalf("seed migrasi tidak memuat key %q", def.Key)
 		}
-		if !strings.Contains(string(sql), def.Subject) {
+		if !strings.Contains(string(seed), def.Subject) {
 			t.Fatalf("seed migrasi tidak memuat subjek default %q", def.Subject)
 		}
-		if !strings.Contains(string(sql), snippets[def.Key]) {
+		if !strings.Contains(string(seed), snippets[def.Key]) {
 			t.Fatalf("seed migrasi tidak memuat cuplikan isi default %q", def.Key)
 		}
 	}
@@ -216,8 +225,8 @@ func TestValidateTemplateTestInput(t *testing.T) {
 // templateRow mencakup keduanya.
 func TestTemplateRowNeverNullArrays(t *testing.T) {
 	s := noDBServer()
-	if len(defaultEmailTemplates) != 7 {
-		t.Fatalf("want 7 template default, got %d", len(defaultEmailTemplates))
+	if len(defaultEmailTemplates) != 8 {
+		t.Fatalf("want 8 template default, got %d", len(defaultEmailTemplates))
 	}
 	for _, def := range defaultEmailTemplates {
 		row := s.templateRow(def, def.Subject, def.BodyHTML, time.Time{})

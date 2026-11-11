@@ -124,6 +124,19 @@ var defaultEmailTemplates = []emailTemplateDef{
 <p>Salam,<br>Tim MutasiHub</p>`,
 		Placeholders: []string{"nama", "paket", "berlaku_sampai"},
 	},
+	{
+		Key:     "mutation_digest",
+		Label:   "Ringkasan Mutasi Baru",
+		Subject: "Ada {{jumlah}} mutasi baru — MutasiHub",
+		BodyHTML: `<p>Halo, {{nama}},</p>
+<p>Ada {{jumlah}} mutasi baru di rekening Anda sejak pemberitahuan terakhir.</p>
+<p><strong>Total masuk:</strong> {{masuk}}<br><strong>Total keluar:</strong> {{keluar}}</p>
+<p>Lihat rincian lengkapnya di dashboard MutasiHub.</p>
+<p><a href="{{tautan}}" style="display:inline-block;background:#047857;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">Lihat di Dashboard</a></p>
+<p>Salam,<br>Tim MutasiHub</p>`,
+		Placeholders: []string{"nama", "jumlah", "masuk", "keluar", "tautan"},
+		Required:     []string{"tautan"},
+	},
 }
 
 func defaultEmailTemplate(key string) (emailTemplateDef, bool) {
@@ -279,6 +292,11 @@ func (s *Server) sampleTemplateVars(key string) map[string]string {
 		vars["tautan"] = s.frontendURL() + "/member/subscription"
 	case "expiry_reminder_h1":
 		vars["sisa_hari"] = "1"
+	case "mutation_digest":
+		vars["jumlah"] = "3"
+		vars["masuk"] = "Rp150.000"
+		vars["keluar"] = "Rp50.000"
+		vars["tautan"] = s.frontendURL() + "/member/dashboard"
 	}
 	return vars
 }

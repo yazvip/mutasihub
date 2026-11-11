@@ -83,6 +83,15 @@ export default function MemberApiPage() {
   const [regenArm, setRegenArm] = useState(false);
   const [regenBusy, setRegenBusy] = useState(false);
 
+  // v42b: preferensi + tes notifikasi mutasi email.
+  const [notifEnabled, setNotifEnabled] = useState(true);
+  const [notifInterval, setNotifInterval] = useState(0);
+  const [notifLastSent, setNotifLastSent] = useState('');
+  const [notifLoaded, setNotifLoaded] = useState(false);
+  const [notifBusy, setNotifBusy] = useState(false);
+  const [notifTestBusy, setNotifTestBusy] = useState(false);
+  const [notifTestSent, setNotifTestSent] = useState(false);
+
   // P2-22: batas backend = 5 key AKTIF yang belum kedaluwarsa.
   const activeCount = keys.filter((k) => k.is_active && !isKeyExpired(k)).length;
   const atKeyLimit = activeCount >= 5;
@@ -112,6 +121,19 @@ export default function MemberApiPage() {
     }
   }
 
+  async function loadNotifications() {
+    try {
+      const d = await apiGet<any>('/api/v1/member/notifications');
+      setNotifEnabled(d?.notif_enabled !== false);
+      setNotifInterval(typeof d?.interval_minutes === 'number' ? d.interval_minutes : 0);
+      setNotifLastSent(d?.last_notified_at ?? '');
+    } catch {
+      // Preferensi gagal dimuat — kartu menampilkan pesan gagal.
+    } finally {
+      setNotifLoaded(true);
+    }
+  }
+
   useEffect(() => {
     load();
     apiGet<any>('/api/v1/member/profile')
@@ -127,6 +149,7 @@ export default function MemberApiPage() {
       })
       .finally(() => setProfileLoaded(true));
     loadDeliveries();
+    loadNotifications();
   }, []);
 
   async function saveCallbackUrl() {
@@ -185,6 +208,37 @@ export default function MemberApiPage() {
       setError(friendlyError(err));
     } finally {
       setTestBusy(false);
+    }
+  }
+
+  async function toggleNotifications() {
+    const next = !notifEnabled;
+    setError(null);
+    setNotice(null);
+    setNotifBusy(true);
+    try {
+      const d = await apiPut<any>('/api/v1/member/notifications', { notif_enabled: next });
+      setNotifEnabled(!!d?.notif_enabled);
+      setNotice(next ? 'Notifikasi mutasi diaktifkan.' : 'Notifikasi mutasi dimatikan. Digest tidak akan dikirim lagi.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setNotifBusy(false);
+    }
+  }
+
+  async function sendNotificationTest() {
+    setError(null);
+    setNotice(null);
+    setNotifTestBusy(true);
+    try {
+      await apiPost<any>('/api/v1/member/notifications/test', {});
+      setNotifTestSent(true);
+      setNotice('Notifikasi tes dikirim ke email Anda.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setNotifTestBusy(false);
     }
   }
 
@@ -470,6 +524,37 @@ export default function MemberApiPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      <Card title="Notifikasi Mutasi" subtitle="Ringkasan mutasi baru dikirim ke email Anda tiap interval paket.">
+        {!notifLoaded ? (
+          <TableSkeleton rows={2} />
+        ) : (
+          <>
+            <p style={{ marginTop: 0 }}>
+              Status: <strong>{notifEnabled ? 'Aktif' : 'Nonaktif'}</strong>
+              {notifInterval > 0 && (
+                <> · Dikirim paling sering tiap {notifInterval} menit (paket Anda), hanya bila ada mutasi baru.</>
+              )}
+            </p>
+            <p className="muted">
+              Terakhir dikirim: {notifLastSent ? formatDateWIB(notifLastSent) : 'Belum pernah dikirim'}
+            </p>
+            <div className="row-actions">
+              <Button onClick={toggleNotifications} disabled={notifBusy}>
+                {notifBusy ? 'Menyimpan…' : notifEnabled ? 'Matikan notifikasi' : 'Aktifkan notifikasi'}
+              </Button>
+              <Button variant="outline" onClick={sendNotificationTest} disabled={notifTestBusy}>
+                {notifTestBusy ? 'Mengirim tes…' : 'Kirim notifikasi tes'}
+              </Button>
+            </div>
+            {notifTestSent && (
+              <p className="muted" style={{ margin: '12px 0 0' }}>
+                Notifikasi tes dikirim — cek inbox email Anda.
+              </p>
             )}
           </>
         )}

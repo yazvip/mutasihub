@@ -54,6 +54,10 @@ func main() {
 	// kedaluwarsa, tiap 30 menit. Exits when ctx is cancelled.
 	go srv.EmailReminderLoop(ctx)
 
+	// Mutation notify worker (v42b): ringkasan mutasi baru per interval
+	// paket, tiap 1 menit. Exits when ctx is cancelled.
+	go srv.MutationNotifyLoop(ctx)
+
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      srv.Handler(),
