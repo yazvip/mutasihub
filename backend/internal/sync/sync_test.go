@@ -1,6 +1,9 @@
 package sync
 
 import (
+	"context"
+	"errors"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -91,5 +94,69 @@ func TestFilterBCAMutations(t *testing.T) {
 		if tx.AccountNo == "9999999999" {
 			t.Fatal("mutasi rekening lain lolos filter")
 		}
+	}
+}
+
+// v42a (Q7 + SSRF guard): hanya https; tolak IP literal privat/loopback/
+// link-local (termasuk 169.254.169.254), userinfo, host kosong, dan
+// hostname yang resolve ke alamat privat. lookupIP di-stub agar tes
+// tidak menyentuh jaringan.
+func TestValidateCallbackURL(t *testing.T) {
+	ctx := context.Background()
+	origLookup := lookupIP
+	defer func() { lookupIP = origLookup }()
+
+	publicIP := func(context.Context, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("93.184.216.34")}, nil
+	}
+	privateIP := func(context.Context, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("10.1.2.3")}, nil
+	}
+	lookupErr := func(context.Context, string) ([]net.IP, error) {
+		return nil, errors.New("no such host")
+	}
+	neverCalled := func(context.Context, string) ([]net.IP, error) {
+		t.Fatal("lookupIP dipanggil untuk URL yang harus ditolak sebelum resolve")
+		return nil, nil
+	}
+
+	cases := []struct {
+		name   string
+		url    string
+		lookup func(context.Context, string) ([]net.IP, error)
+		wantOK bool
+	}{
+		{"https publik ok", "https://example.com/hook", publicIP, true},
+		{"https port eksplisit ok", "https://example.com:8443/hook", publicIP, true},
+		{"IP publik literal ok", "https://8.8.8.8/hook", neverCalled, true},
+		{"http ditolak", "http://example.com/hook", neverCalled, false},
+		{"skema kosong ditolak", "example.com/hook", neverCalled, false},
+		{"host kosong ditolak", "https:///hook", neverCalled, false},
+		{"userinfo ditolak", "https://user:pass@example.com/hook", neverCalled, false},
+		{"localhost ditolak", "https://localhost/hook", neverCalled, false},
+		{"10/8 ditolak", "https://10.0.0.5/hook", neverCalled, false},
+		{"192.168/16 ditolak", "https://192.168.1.1/hook", neverCalled, false},
+		{"172.16/12 ditolak", "https://172.16.0.9/hook", neverCalled, false},
+		{"127.0.0.1 ditolak", "https://127.0.0.1/hook", neverCalled, false},
+		{"169.254.169.254 ditolak", "https://169.254.169.254/latest", neverCalled, false},
+		{"169.254/16 ditolak", "https://169.254.10.20/hook", neverCalled, false},
+		{"0.0.0.0 ditolak", "https://0.0.0.0/hook", neverCalled, false},
+		{"::1 ditolak", "https://[::1]/hook", neverCalled, false},
+		{"fd00::/8 ditolak", "https://[fd00::1]/hook", neverCalled, false},
+		{"resolve ke privat ditolak", "https://example.com/hook", privateIP, false},
+		{"resolve gagal ditolak", "https://tidak-ada.invalid/hook", lookupErr, false},
+		{"terlalu panjang ditolak", "https://example.com/" + strings.Repeat("a", 600), neverCalled, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lookupIP = tc.lookup
+			err := ValidateCallbackURL(ctx, tc.url)
+			if tc.wantOK && err != nil {
+				t.Fatalf("ValidateCallbackURL(%q) = %v, want nil", tc.url, err)
+			}
+			if !tc.wantOK && err == nil {
+				t.Fatalf("ValidateCallbackURL(%q) = nil, want error", tc.url)
+			}
+		})
 	}
 }

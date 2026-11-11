@@ -68,8 +68,16 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	id, _ := memberID(r)
 	var email, name string
 	var callback, cbSecret sql.NullString
-	err := s.store.DB.QueryRowContext(r.Context(), `SELECT email, name, callback_url, callback_secret FROM members WHERE id=?`, id).
-		Scan(&email, &name, &callback, &cbSecret)
+	var cbEnabled int
+	// v42a: callback_enabled = paket aktif member mengizinkan callback
+	// (Enterprise). Dipakai halaman /member/api untuk menampilkan status
+	// + upsell bila paket tidak mengizinkan.
+	err := s.store.DB.QueryRowContext(r.Context(), `SELECT m.email, m.name, m.callback_url, m.callback_secret,
+		COALESCE(p.callback_enabled,0)=1 FROM members m
+		LEFT JOIN subscriptions sub ON sub.member_id=m.id AND sub.status='active' AND sub.expires_at > NOW()
+		LEFT JOIN plans p ON p.id=sub.plan_id
+		WHERE m.id=? ORDER BY sub.expires_at DESC LIMIT 1`, id).
+		Scan(&email, &name, &callback, &cbSecret, &cbEnabled)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "not_found", "member tidak ditemukan")
 		return
@@ -79,7 +87,8 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		// Secret HMAC callback milik member sendiri (P2-8): dipakai
 		// memverifikasi header X-MutasiHub-Signature. Kosong sampai
 		// callback pertama terkirim (secret di-generate saat itu).
-		"callback_secret": cbSecret.String,
+		"callback_secret":  cbSecret.String,
+		"callback_enabled": cbEnabled == 1,
 	})
 }
 
@@ -761,7 +770,7 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.store.DB.QueryContext(r.Context(), `SELECT id, slug, name, price_cents, duration_days,
-		max_accounts, api_delay_minutes, notif_interval_minutes, max_devices, callback_enabled, inquiry_enabled, inquiry_limit, is_active
+		max_accounts, api_delay_minutes, notif_interval_minutes, callback_enabled, inquiry_enabled, inquiry_limit, is_active
 		FROM plans WHERE is_active=1 ORDER BY price_cents`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal membaca paket")
@@ -774,7 +783,7 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		var cb, inq, active int
 		var limit sql.NullInt32
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.PriceCents, &p.DurationDays, &p.MaxAccounts,
-			&p.APIDelayMinutes, &p.NotifIntervalMin, &p.MaxDevices, &cb, &inq, &limit, &active); err != nil {
+			&p.APIDelayMinutes, &p.NotifIntervalMin, &cb, &inq, &limit, &active); err != nil {
 			continue
 		}
 		p.CallbackEnabled = cb == 1
@@ -1033,10 +1042,10 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 	var plan domain.Plan
 	var cb int
 	err := s.store.DB.QueryRowContext(r.Context(), `SELECT id, slug, name, price_cents, duration_days,
-		max_accounts, api_delay_minutes, notif_interval_minutes, max_devices, callback_enabled
+		max_accounts, api_delay_minutes, notif_interval_minutes, callback_enabled
 		FROM plans WHERE slug=? AND is_active=1`, req.PlanSlug).
 		Scan(&plan.ID, &plan.Slug, &plan.Name, &plan.PriceCents, &plan.DurationDays, &plan.MaxAccounts,
-			&plan.APIDelayMinutes, &plan.NotifIntervalMin, &plan.MaxDevices, &cb)
+			&plan.APIDelayMinutes, &plan.NotifIntervalMin, &cb)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "plan_not_found", "paket tidak ditemukan")
 		return

@@ -21,7 +21,6 @@ type Plan = {
   duration_days?: number;
   max_accounts?: number;
   max_rekening?: number;
-  max_devices?: number;
   api_delay_minutes?: number;
   notif_interval_minutes?: number;
   callback_enabled?: boolean;
@@ -47,6 +46,7 @@ const FALLBACK_PLANS: Plan[] = [
     notif_interval_minutes: 5,
     callback_enabled: false,
     inquiry_enabled: false,
+    inquiry_limit: null,
   },
   {
     slug: 'starter',
@@ -58,6 +58,7 @@ const FALLBACK_PLANS: Plan[] = [
     notif_interval_minutes: 3,
     callback_enabled: false,
     inquiry_enabled: true,
+    inquiry_limit: 5000,
   },
   {
     slug: 'pro',
@@ -69,6 +70,7 @@ const FALLBACK_PLANS: Plan[] = [
     notif_interval_minutes: 2,
     callback_enabled: false,
     inquiry_enabled: true,
+    inquiry_limit: null,
     highlight: true,
   },
   {
@@ -81,6 +83,7 @@ const FALLBACK_PLANS: Plan[] = [
     notif_interval_minutes: 1,
     callback_enabled: true,
     inquiry_enabled: true,
+    inquiry_limit: null,
   },
 ];
 
@@ -118,7 +121,7 @@ const FAQ = [
   },
   {
     q: 'Bank & dompet digital apa saja yang didukung?',
-    a: 'Saat ini sistem mendukung penuh DANA dan BCA. Integrasi untuk bank dan e-wallet lain seperti Mandiri Livin, BRImo, dan OVO sedang dalam tahap pengujian berkala dan akan dirilis dalam waktu dekat.',
+    a: 'Saat ini kami mendukung DANA dan BCA. Dukungan bank dan e-wallet lain akan diumumkan setelah tersedia.',
   },
 ];
 
@@ -148,7 +151,7 @@ const SAMPLE_CHANNELS = [
 ];
 
 const FEATURES = [
-  { icon: '⚡', iconBg: 'bg-brand-50 text-brand-700', title: 'Sinkronisasi Realtime', desc: 'Mutasi DANA & BCA tercatat dalam hitungan detik setelah transfer sukses tanpa perlu manual request download mutasi.' },
+  { icon: '⚡', iconBg: 'bg-brand-50 text-brand-700', title: 'Sinkronisasi Realtime', desc: 'Mutasi DANA & BCA tercatat otomatis setelah transfer sukses, tanpa perlu unduh mutasi manual.' },
   { icon: '🗂️', iconBg: 'bg-indigo-50 text-indigo-700', title: 'Manajemen Multi-Rekening', desc: 'Hubungkan beberapa rekening bank BCA dan akun DANA sekaligus dalam satu dashboard manajemen terpusat.' },
   { icon: '🔌', iconBg: 'bg-purple-50 text-purple-700', title: 'REST API & Webhook', desc: 'Dilengkapi API Key, IP Whitelist, dan Webhook callback instan untuk integrasi bot Telegram, kasir POS, atau sistem deposit.' },
   { icon: '🔍', iconBg: 'bg-amber-50 text-amber-700', title: 'Smart Filter & Ekspor CSV', desc: 'Pencarian kilat berdasarkan nominal, nama pengirim, atau tanggal. Ekspor ke format CSV / Excel sekali klik untuk rekonsiliasi akuntansi.' },

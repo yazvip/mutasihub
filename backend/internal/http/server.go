@@ -103,6 +103,11 @@ func (s *Server) routes() {
 	// Member.
 	m.HandleFunc("GET /api/v1/member/dashboard", s.authMember(s.handleDashboard))
 	m.HandleFunc("GET /api/v1/member/profile", s.authMember(s.handleProfile))
+	// Instant Callback (v42a).
+	m.HandleFunc("PUT /api/v1/member/callback", s.authMember(s.handleSetMemberCallback))
+	m.HandleFunc("POST /api/v1/member/callback/test", s.authMember(s.handleTestMemberCallback))
+	m.HandleFunc("POST /api/v1/member/callback/secret/regenerate", s.authMember(s.handleRegenerateCallbackSecret))
+	m.HandleFunc("GET /api/v1/member/callback/deliveries", s.authMember(s.handleListCallbackDeliveries))
 	m.HandleFunc("GET /api/v1/accounts", s.authMember(s.handleListAccounts))
 	m.HandleFunc("POST /api/v1/accounts", s.authMember(s.handleCreateAccount))
 	m.HandleFunc("DELETE /api/v1/accounts/{id}", s.authMember(s.handleDeleteAccount))

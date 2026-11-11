@@ -14,6 +14,7 @@ const SECTIONS = [
   { id: 'inquiry', label: 'Inquiry Rekening', num: '08' },
   { id: 'keamanan', label: 'Keamanan', num: '09' },
   { id: 'ganti-paket', label: 'Ganti Paket', num: '10' },
+  { id: 'webhook', label: 'Webhook / Instant Callback', num: '11' },
 ];
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
@@ -135,6 +136,31 @@ const ERROR_EXAMPLE = `{
   "error": "invalid_api_key",
   "message": "API key tidak valid atau nonaktif"
 }`;
+
+const CALLBACK_PAYLOAD_EXAMPLE = `{
+  "provider": "DANA",
+  "account_id": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+  "new_mutations": 3
+}`;
+
+const CALLBACK_VERIFY_EXAMPLE = `const crypto = require('crypto');
+
+// Header yang dikirim server:
+//   X-MutasiHub-Event: mutation.new
+//   X-MutasiHub-Signature: sha256=<hex HMAC-SHA256(secret, body)>
+const expected =
+  'sha256=' +
+  crypto
+    .createHmac('sha256', 'SECRET_CALLBACK_ANDA')
+    .update(rawBody) // body mentah (Buffer/string), BUKAN hasil JSON.parse lalu stringify ulang
+    .digest('hex');
+
+const ok = crypto.timingSafeEqual(
+  Buffer.from(expected),
+  Buffer.from(req.headers['x-mutasiHub-signature'] || '')
+);
+if (!ok) return res.status(401).end(); // signature tidak cocok: tolak
+// Lanjutkan proses mutation.new — lalu jawab 2xx secepatnya.`;
 
 const PARAMS: { name: string; example: string; desc: string }[] = [
   { name: 'from', example: '2026-11-01', desc: 'Mutasi sejak tanggal ini (YYYY-MM-DD)' },
@@ -467,6 +493,50 @@ export default function ApiDocsPage() {
                 halaman Langganan menampilkan perbandingan paket lama/baru dan
                 daftar rekening yang akan dibekukan sebelum Anda menyetujui.
               </li>
+            </ul>
+
+            <SectionHead num="11" id="webhook" title="Webhook / Instant Callback" />
+            <p>
+              Instant Callback tersedia di paket <strong>Enterprise</strong>.
+              Begitu ada mutasi baru di rekening yang terhubung, server
+              mengirim <strong>POST JSON</strong> ke URL callback Anda — tanpa
+              perlu polling. Isi URL-nya di{' '}
+              <Link href="/member/api">halaman API Key</Link> (kartu
+              &ldquo;Callback (Instant Callback)&rdquo;), lalu tekan{' '}
+              <strong>Kirim tes callback</strong> untuk memastikan endpoint
+              Anda menerima event.
+            </p>
+            <h3>Event mutation.new</h3>
+            <p>
+              Dikirim setiap batch mutasi baru selesai disinkronkan (satu
+              event per rekening per batch — bukan per transaksi). Header
+              yang menyertainya:
+            </p>
+            <ul className="docs-list">
+              <li><code>X-MutasiHub-Event</code> — nama event (<code>mutation.new</code> atau <code>callback.test</code>).</li>
+              <li><code>X-MutasiHub-Signature</code> — <code>sha256=&lt;hex HMAC-SHA256(secret, body)&gt;</code>, memakai secret callback Anda.</li>
+            </ul>
+            <CodeBlock lang="JSON" code={CALLBACK_PAYLOAD_EXAMPLE} />
+            <ul className="docs-list">
+              <li><code>provider</code> — <code>DANA</code> atau <code>BCA</code>.</li>
+              <li><code>account_id</code> — ID rekening (bukan nomor rekening).</li>
+              <li><code>new_mutations</code> — jumlah mutasi baru di batch ini.</li>
+            </ul>
+            <h3>Verifikasi signature</h3>
+            <p>
+              Selalu verifikasi signature sebelum memproses callback — siapa
+              pun bisa POST ke URL Anda. Secret-nya tampil di halaman API Key
+              (dan bisa di-regenerasi di sana; secret lama langsung tidak
+              berlaku setelah regenerasi).
+            </p>
+            <CodeBlock lang="JavaScript" code={CALLBACK_VERIFY_EXAMPLE} />
+            <h3>Aturan pengiriman</h3>
+            <ul className="docs-list">
+              <li>URL wajib <strong>https</strong>; alamat IP privat/loopback/link-local (mis. <code>127.0.0.1</code>, <code>192.168.x.x</code>, <code>169.254.169.254</code>) ditolak.</li>
+              <li>Endpoint harus menjawab <strong>2xx</strong>. Bila gagal (transport error atau non-2xx), server mencoba lagi sampai <strong>3 kali</strong> (jeda 1 dtk, lalu 2 dtk).</li>
+              <li>Event <code>callback.test</code> adalah event percobaan dari tombol tes — payload-nya <code>{`{"provider":"TEST","account_id":"test","new_mutations":0,"test":true}`}</code>, bukan mutasi nyata.</li>
+              <li>Semua percobaan tercatat — lihat <strong>Riwayat pengiriman</strong> di halaman API Key (event, target, status HTTP, waktu).</li>
+              <li>Callback hanya dikirim bila paket aktif Anda mengizinkannya. Bila Anda turun paket, callback berhenti; URL tetap tersimpan dan bisa dihapus dari halaman API Key.</li>
             </ul>
 
             <div className="docs-cta">

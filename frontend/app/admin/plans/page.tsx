@@ -16,8 +16,10 @@ import {
 
 // Kontrak backend (domain.Plan, admin_handlers.go): {id, slug, name,
 // price_cents, duration_days, max_accounts, api_delay_minutes,
-// notif_interval_minutes, max_devices, callback_enabled, inquiry_enabled,
+// notif_interval_minutes, callback_enabled, inquiry_enabled,
 // inquiry_limit (number | null; null = tanpa batas), is_active}.
+// (v42a E2: max_devices dihapus dari UI/API — kolom DB dibiarkan, tidak
+// dipakai.)
 // Form menampilkan harga rupiah + menit; payload kirim price_cents (= Rp x100)
 // dan field _minutes. PUT backend menerima objek plan penuh incl. is_active
 // (handler update memakai pointer field: field yang tidak dikirim tidak
@@ -33,7 +35,6 @@ type Plan = {
   max_accounts: number;
   api_delay_minutes: number;
   notif_interval_minutes: number;
-  max_devices: number;
   callback_enabled: boolean;
   inquiry_enabled: boolean;
   inquiry_limit?: number | null;
@@ -51,7 +52,6 @@ type PlanForm = {
   max_accounts: number | '';
   api_delay_minutes: number | '';
   notif_interval_minutes: number | '';
-  max_devices: number | '';
   callback_enabled: boolean;
   inquiry_enabled: boolean;
   // Batas hit inquiry/hari: '' = kosong = Tanpa batas (kirim null).
@@ -67,7 +67,6 @@ const EMPTY: PlanForm = {
   max_accounts: '',
   api_delay_minutes: '',
   notif_interval_minutes: '',
-  max_devices: '',
   callback_enabled: false,
   inquiry_enabled: false,
   inquiry_limit: '',
@@ -127,7 +126,6 @@ export default function AdminPlansPage() {
       max_accounts: p.max_accounts ?? 2,
       api_delay_minutes: p.api_delay_minutes ?? 0,
       notif_interval_minutes: p.notif_interval_minutes ?? 5,
-      max_devices: p.max_devices ?? 1,
       callback_enabled: !!p.callback_enabled,
       inquiry_enabled: !!p.inquiry_enabled,
       // 0 adalah nilai sah (tidak ada hit diizinkan) — pakai ?? agar tidak
@@ -170,7 +168,6 @@ export default function AdminPlansPage() {
         max_accounts: Number(form.max_accounts),
         api_delay_minutes: Number(form.api_delay_minutes),
         notif_interval_minutes: Number(form.notif_interval_minutes),
-        max_devices: Number(form.max_devices),
         callback_enabled: form.callback_enabled,
         inquiry_enabled: form.inquiry_enabled,
         // Selalu dikirim eksplisit (modal ini mengirim objek plan penuh,
@@ -267,9 +264,6 @@ export default function AdminPlansPage() {
             </Field>
             <Field label="Interval notifikasi (menit)">
               <input type="number" min={0} value={form.notif_interval_minutes} placeholder="5" onChange={(e) => set('notif_interval_minutes', e.target.value === '' ? '' : Number(e.target.value))} />
-            </Field>
-            <Field label="Maks. device">
-              <input type="number" min={1} value={form.max_devices} placeholder="1" onChange={(e) => set('max_devices', e.target.value === '' ? '' : Number(e.target.value))} />
             </Field>
             <div className="field">
               <span className="field-label">Instant Callback</span>

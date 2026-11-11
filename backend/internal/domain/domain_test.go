@@ -9,7 +9,7 @@ func intPtr(v int) *int { return &v }
 
 func TestValidatePlan(t *testing.T) {
 	valid := Plan{Slug: "pro", Name: "Pro", PriceCents: 90000000, DurationDays: 30,
-		MaxAccounts: 5, APIDelayMinutes: 3, NotifIntervalMin: 2, MaxDevices: 5}
+		MaxAccounts: 5, APIDelayMinutes: 3, NotifIntervalMin: 2}
 	if err := ValidatePlan(valid); err != nil {
 		t.Fatalf("valid plan rejected: %v", err)
 	}
@@ -23,7 +23,6 @@ func TestValidatePlan(t *testing.T) {
 		{"zero accounts", func(p *Plan) { p.MaxAccounts = 0 }},
 		{"negative delay", func(p *Plan) { p.APIDelayMinutes = -1 }},
 		{"zero notif interval", func(p *Plan) { p.NotifIntervalMin = 0 }},
-		{"zero devices", func(p *Plan) { p.MaxDevices = 0 }},
 		{"slug with space", func(p *Plan) { p.Slug = "pro plan" }},
 		{"slug uppercase", func(p *Plan) { p.Slug = "Pro" }},
 		{"slug with underscore", func(p *Plan) { p.Slug = "pro_plan" }},
@@ -32,7 +31,6 @@ func TestValidatePlan(t *testing.T) {
 		{"duration too long", func(p *Plan) { p.DurationDays = 3651 }},
 		{"max accounts too high", func(p *Plan) { p.MaxAccounts = 101 }},
 		{"delay too high", func(p *Plan) { p.APIDelayMinutes = 1441 }},
-		{"devices too high", func(p *Plan) { p.MaxDevices = 101 }},
 		{"negative inquiry_limit", func(p *Plan) { p.InquiryLimit = intPtr(-1) }},
 	}
 	for _, tc := range cases {

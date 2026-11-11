@@ -139,21 +139,31 @@ export type PlanFeaturesInput = InquiryPlan & {
  * Bullet fitur paket — SATU-SATUNYA sumber untuk kartu harga landing dan
  * halaman langganan member. Diturunkan dari field plan API, bukan dari
  * array `features` kiriman backend (backend tidak pernah mengirim field
- * itu) dan bukan dari daftar statis: 'Cek mutasi realtime' dan
- * 'Filter & Ekspor CSV' adalah janji produk untuk semua paket aktif
- * (tanpa embel-embel 'Uncapped' — ekspor CSV dibatasi 5000 baris, lihat
- * /docs); 'Notifikasi mutasi' hanya muncul dengan interval dari
- * notif_interval_minutes; 'Sinkronisasi tanpa delay' hanya bila
- * api_delay_minutes === 0; 'Prioritas dukungan' tidak ada field-nya
- * sehingga tidak pernah muncul.
+ * itu) dan bukan dari daftar statis: 'Cek mutasi tiap N menit' memakai
+ * jeda sync paket (api_delay_minutes; 0 = ticker 1 menit) — v42a E3,
+ * kata 'realtime' tidak lagi dipakai sebagai bullet karena sync adalah
+ * polling per interval, bukan instan; 'Filter & Ekspor CSV' adalah janji
+ * produk untuk semua paket aktif (tanpa embel-embel 'Uncapped' — ekspor
+ * CSV dibatasi 5000 baris, lihat /docs); 'Notifikasi mutasi' hanya muncul
+ * dengan interval dari notif_interval_minutes; 'Sinkronisasi tanpa delay'
+ * hanya bila api_delay_minutes === 0; 'Prioritas dukungan' tidak ada
+ * field-nya sehingga tidak pernah muncul.
  */
 export function planFeatures(p: PlanFeaturesInput): string[] {
   const maxAcc = p.max_accounts ?? p.max_rekening ?? 0;
   const duration = p.duration_days ?? 30;
+  // Bullet cek mutasi jujur per paket (v42a E3): delay > 0 -> tiap N
+  // menit; delay 0 -> ticker 1 menit (bukan "hitungan detik").
+  const syncBullet =
+    typeof p.api_delay_minutes === 'number'
+      ? p.api_delay_minutes > 0
+        ? `Cek mutasi tiap ${p.api_delay_minutes} menit`
+        : 'Cek mutasi tiap 1 menit'
+      : 'Cek mutasi realtime';
   return [
     `${maxAcc || '-'} rekening`,
     `Masa aktif ${duration} hari`,
-    'Cek mutasi realtime',
+    syncBullet,
     'Filter & Ekspor CSV',
     ...(typeof p.notif_interval_minutes === 'number'
       ? [`Notifikasi mutasi tiap ${p.notif_interval_minutes} menit`]

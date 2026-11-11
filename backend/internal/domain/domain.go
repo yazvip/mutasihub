@@ -12,13 +12,12 @@ import (
 var planSlugRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 // Batas atas wajar (P2-10): harga maks Rp100jt (10_000_000_000 sen),
-// durasi maks 3650 hari (10 tahun), max_accounts/max_devices maks 100,
+// durasi maks 3650 hari (10 tahun), max_accounts maks 100,
 // delay/notif maks 1440 menit (1 hari).
 const (
 	maxPlanPriceCents = 10000000000
 	maxPlanDuration   = 3650
 	maxPlanAccounts   = 100
-	maxPlanDevices    = 100
 	maxPlanMinutes    = 1440
 )
 
@@ -32,7 +31,6 @@ type Plan struct {
 	MaxAccounts      int    `json:"max_accounts"`
 	APIDelayMinutes  int    `json:"api_delay_minutes"`
 	NotifIntervalMin int    `json:"notif_interval_minutes"`
-	MaxDevices       int    `json:"max_devices"`
 	CallbackEnabled  bool   `json:"callback_enabled"`
 	InquiryEnabled   bool   `json:"inquiry_enabled"`
 	// InquiryLimit: batas hit inquiry/hari (tanggal WIB). nil = tanpa
@@ -89,12 +87,6 @@ func ValidatePlan(p Plan) error {
 	if p.NotifIntervalMin > maxPlanMinutes {
 		return errors.New("domain: plan notif_interval_minutes must be <= 1440")
 	}
-	if p.MaxDevices < 1 {
-		return errors.New("domain: plan max_devices must be >= 1")
-	}
-	if p.MaxDevices > maxPlanDevices {
-		return errors.New("domain: plan max_devices must be <= 100")
-	}
 	if p.InquiryLimit != nil && *p.InquiryLimit < 0 {
 		return errors.New("domain: plan inquiry_limit must not be negative")
 	}
@@ -115,9 +107,9 @@ func SubscriptionActive(expiresAt time.Time, now time.Time) bool {
 // unavailable (public /plans endpoint and trial assignment fallback).
 func DefaultPlans() []Plan {
 	return []Plan{
-		{Slug: "trial", Name: "Trial", PriceCents: 0, DurationDays: 1, MaxAccounts: 2, APIDelayMinutes: 10, NotifIntervalMin: 5, MaxDevices: 1, CallbackEnabled: false, InquiryEnabled: false, IsActive: true},
-		{Slug: "starter", Name: "Starter", PriceCents: 35000000, DurationDays: 30, MaxAccounts: 2, APIDelayMinutes: 5, NotifIntervalMin: 3, MaxDevices: 3, CallbackEnabled: false, InquiryEnabled: true, IsActive: true},
-		{Slug: "pro", Name: "Pro", PriceCents: 90000000, DurationDays: 30, MaxAccounts: 5, APIDelayMinutes: 3, NotifIntervalMin: 2, MaxDevices: 5, CallbackEnabled: false, InquiryEnabled: true, IsActive: true},
-		{Slug: "enterprise", Name: "Enterprise", PriceCents: 180000000, DurationDays: 30, MaxAccounts: 5, APIDelayMinutes: 0, NotifIntervalMin: 1, MaxDevices: 8, CallbackEnabled: true, InquiryEnabled: true, IsActive: true},
+		{Slug: "trial", Name: "Trial", PriceCents: 0, DurationDays: 1, MaxAccounts: 2, APIDelayMinutes: 10, NotifIntervalMin: 5, CallbackEnabled: false, InquiryEnabled: false, IsActive: true},
+		{Slug: "starter", Name: "Starter", PriceCents: 35000000, DurationDays: 30, MaxAccounts: 2, APIDelayMinutes: 5, NotifIntervalMin: 3, CallbackEnabled: false, InquiryEnabled: true, IsActive: true},
+		{Slug: "pro", Name: "Pro", PriceCents: 90000000, DurationDays: 30, MaxAccounts: 5, APIDelayMinutes: 3, NotifIntervalMin: 2, CallbackEnabled: false, InquiryEnabled: true, IsActive: true},
+		{Slug: "enterprise", Name: "Enterprise", PriceCents: 180000000, DurationDays: 30, MaxAccounts: 5, APIDelayMinutes: 0, NotifIntervalMin: 1, CallbackEnabled: true, InquiryEnabled: true, IsActive: true},
 	}
 }

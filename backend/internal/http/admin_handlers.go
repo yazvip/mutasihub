@@ -31,7 +31,7 @@ func (s *Server) handleAdminListPlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.store.DB.QueryContext(r.Context(), `SELECT id, slug, name, price_cents, duration_days,
-		max_accounts, api_delay_minutes, notif_interval_minutes, max_devices, callback_enabled, inquiry_enabled, inquiry_limit, is_active
+		max_accounts, api_delay_minutes, notif_interval_minutes, callback_enabled, inquiry_enabled, inquiry_limit, is_active
 		FROM plans ORDER BY price_cents`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal membaca paket")
@@ -44,7 +44,7 @@ func (s *Server) handleAdminListPlans(w http.ResponseWriter, r *http.Request) {
 		var cb, inq, active int
 		var limit sql.NullInt32
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.PriceCents, &p.DurationDays, &p.MaxAccounts,
-			&p.APIDelayMinutes, &p.NotifIntervalMin, &p.MaxDevices, &cb, &inq, &limit, &active); err != nil {
+			&p.APIDelayMinutes, &p.NotifIntervalMin, &cb, &inq, &limit, &active); err != nil {
 			continue
 		}
 		p.CallbackEnabled = cb == 1
@@ -71,10 +71,10 @@ func (s *Server) handleAdminCreatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.store.DB.ExecContext(r.Context(), `INSERT INTO plans
 		(slug, name, price_cents, duration_days, max_accounts, api_delay_minutes,
-		 notif_interval_minutes, max_devices, callback_enabled, inquiry_enabled, inquiry_limit, is_active)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+		 notif_interval_minutes, callback_enabled, inquiry_enabled, inquiry_limit, is_active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
 		p.Slug, p.Name, p.PriceCents, p.DurationDays, p.MaxAccounts, p.APIDelayMinutes,
-		p.NotifIntervalMin, p.MaxDevices, boolToInt(p.CallbackEnabled), boolToInt(p.InquiryEnabled), intPtrToDB(p.InquiryLimit))
+		p.NotifIntervalMin, boolToInt(p.CallbackEnabled), boolToInt(p.InquiryEnabled), intPtrToDB(p.InquiryLimit))
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate") {
 			writeErr(w, http.StatusConflict, "slug_taken", "slug paket sudah dipakai")
@@ -135,7 +135,6 @@ type planUpdateRequest struct {
 	MaxAccounts      *int             `json:"max_accounts"`
 	APIDelayMinutes  *int             `json:"api_delay_minutes"`
 	NotifIntervalMin *int             `json:"notif_interval_minutes"`
-	MaxDevices       *int             `json:"max_devices"`
 	CallbackEnabled  *bool            `json:"callback_enabled"`
 	InquiryEnabled   *bool            `json:"inquiry_enabled"`
 	InquiryLimit     nullableIntField `json:"inquiry_limit"`
@@ -167,9 +166,6 @@ func applyPlanUpdateRequest(cur domain.Plan, req planUpdateRequest) domain.Plan 
 	}
 	if req.NotifIntervalMin != nil {
 		cur.NotifIntervalMin = *req.NotifIntervalMin
-	}
-	if req.MaxDevices != nil {
-		cur.MaxDevices = *req.MaxDevices
 	}
 	if req.CallbackEnabled != nil {
 		cur.CallbackEnabled = *req.CallbackEnabled
@@ -212,9 +208,9 @@ func (s *Server) handleAdminUpdatePlan(w http.ResponseWriter, r *http.Request) {
 	var cb, inq, active int
 	var limit sql.NullInt32
 	err = s.store.DB.QueryRowContext(r.Context(), `SELECT slug, name, price_cents, duration_days,
-		max_accounts, api_delay_minutes, notif_interval_minutes, max_devices, callback_enabled, inquiry_enabled, inquiry_limit, is_active
+		max_accounts, api_delay_minutes, notif_interval_minutes, callback_enabled, inquiry_enabled, inquiry_limit, is_active
 		FROM plans WHERE id=?`, planID).Scan(&cur.Slug, &cur.Name, &cur.PriceCents, &cur.DurationDays,
-		&cur.MaxAccounts, &cur.APIDelayMinutes, &cur.NotifIntervalMin, &cur.MaxDevices, &cb, &inq, &limit, &active)
+		&cur.MaxAccounts, &cur.APIDelayMinutes, &cur.NotifIntervalMin, &cb, &inq, &limit, &active)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "plan_not_found", "paket tidak ditemukan")
 		return
@@ -231,9 +227,9 @@ func (s *Server) handleAdminUpdatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = s.store.DB.ExecContext(r.Context(), `UPDATE plans SET slug=?, name=?, price_cents=?,
 		duration_days=?, max_accounts=?, api_delay_minutes=?, notif_interval_minutes=?,
-		max_devices=?, callback_enabled=?, inquiry_enabled=?, inquiry_limit=?, is_active=? WHERE id=?`,
+		callback_enabled=?, inquiry_enabled=?, inquiry_limit=?, is_active=? WHERE id=?`,
 		cur.Slug, cur.Name, cur.PriceCents, cur.DurationDays, cur.MaxAccounts, cur.APIDelayMinutes,
-		cur.NotifIntervalMin, cur.MaxDevices, boolToInt(cur.CallbackEnabled), boolToInt(cur.InquiryEnabled), intPtrToDB(cur.InquiryLimit), boolToInt(cur.IsActive), planID)
+		cur.NotifIntervalMin, boolToInt(cur.CallbackEnabled), boolToInt(cur.InquiryEnabled), intPtrToDB(cur.InquiryLimit), boolToInt(cur.IsActive), planID)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate") {
 			writeErr(w, http.StatusConflict, "slug_taken", "slug paket sudah dipakai")

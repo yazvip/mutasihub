@@ -18,7 +18,7 @@ import {
 
 // Kontrak backend (domain.Plan): {id, slug, name, price_cents,
 // duration_days, max_accounts, api_delay_minutes, notif_interval_minutes,
-// max_devices, callback_enabled, inquiry_enabled, inquiry_limit
+// callback_enabled, inquiry_enabled, inquiry_limit
 // (number | null; null = tanpa batas), is_active}. Harga tampil =
 // price_cents/100. Bullet fitur diturunkan planFeatures() di lib/format.ts
 // (sama dengan kartu harga landing) — bukan dari array `features` statis.

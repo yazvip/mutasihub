@@ -566,64 +566,77 @@ func (s *Syncer) ensureCallbackSecret(ctx context.Context, memberID string) (str
 	return gen, nil
 }
 
-// fireCallback delivers one mutation.new callback (P2-8): signed with
-// HMAC-SHA256 (header X-MutasiHub-Signature) + X-MutasiHub-Event,
-// retried up to 3 attempts with backoff (1s, 2s) on transport error or
-// non-2xx, response body/status stored for EVERY attempt in the
-// callbacks table (not only failures), and a final failure audited.
-func (s *Syncer) fireCallback(ctx context.Context, a *accountRow, event, payload string) {
+// fireCallback delivers one callback (P2-8): signed with HMAC-SHA256
+// (header X-MutasiHub-Signature) + X-MutasiHub-Event, retried up to 3
+// attempts with backoff (1s, 2s) on transport error or non-2xx, response
+// body/status stored for EVERY attempt in the callbacks table (not only
+// failures), and a final failure audited. Returns the last attempt's
+// HTTP status, response body and error (nil on 2xx) — v42a: TestCallback
+// needs them for the member-facing test response. Callers that only fire
+// and forget (syncDANA/syncBCA) ignore the returns.
+//
+// Defense-in-depth (v42a): host target divalidasi ulang sebelum POST —
+// DNS bisa berubah setelah URL disimpan member. Bila ditolak: log +
+// audit callback_blocked, jangan kirim.
+func (s *Syncer) fireCallback(ctx context.Context, a *accountRow, event, payload string) (status int, body string, err error) {
 	target := a.CallbackURL.String
+	if verr := ValidateCallbackURL(ctx, target); verr != nil {
+		s.log.Printf("sync: callback %s ke %s ditolak: %v", event, target, verr)
+		s.store.Audit(ctx, "member", a.MemberID, "callback_blocked",
+			fmt.Sprintf("event=%s target=%s alasan=%s", event, target, verr), "")
+		return 0, "", fmt.Errorf("%w: %s", ErrCallbackURLInvalid, verr)
+	}
 	secret := ""
 	if a.CallbackSecret.Valid && a.CallbackSecret.String != "" {
 		secret = a.CallbackSecret.String
-	} else if gen, err := s.ensureCallbackSecret(ctx, a.MemberID); err == nil {
+	} else if gen, genErr := s.ensureCallbackSecret(ctx, a.MemberID); genErr == nil {
 		secret = gen
 	} else {
-		s.log.Printf("sync: callback secret member=%s tidak bisa disiapkan: %v", a.MemberID, err)
+		s.log.Printf("sync: callback secret member=%s tidak bisa disiapkan: %v", a.MemberID, genErr)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	var lastStatus int
 	var lastBody string
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(payload))
-		if err != nil {
-			s.log.Printf("sync: callback build: %v", err)
-			return
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(payload))
+		if reqErr != nil {
+			s.log.Printf("sync: callback build: %v", reqErr)
+			return 0, "", reqErr
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-MutasiHub-Event", event)
 		if secret != "" {
 			req.Header.Set("X-MutasiHub-Signature", callbackSignature(secret, payload))
 		}
-		resp, err := client.Do(req)
-		status := 0
-		body := ""
-		if err != nil {
-			lastErr = err
-			body = err.Error()
+		resp, doErr := client.Do(req)
+		attemptStatus := 0
+		attemptBody := ""
+		if doErr != nil {
+			lastErr = doErr
+			attemptBody = doErr.Error()
 		} else {
-			status = resp.StatusCode
+			attemptStatus = resp.StatusCode
 			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
-			body = string(raw)
-			if status >= 200 && status < 300 {
+			attemptBody = string(raw)
+			if attemptStatus >= 200 && attemptStatus < 300 {
 				lastErr = nil
 			} else {
-				lastErr = fmt.Errorf("callback HTTP %d", status)
+				lastErr = fmt.Errorf("callback HTTP %d", attemptStatus)
 			}
 		}
-		lastStatus, lastBody = status, body
+		lastStatus, lastBody = attemptStatus, attemptBody
 		_, _ = s.store.DB.ExecContext(ctx, `INSERT INTO callbacks (member_id, event, payload, target_url, status_code, response_body)
-			VALUES (?, ?, ?, ?, ?, ?)`, a.MemberID, event, payload, target, status, body)
+			VALUES (?, ?, ?, ?, ?, ?)`, a.MemberID, event, payload, target, attemptStatus, attemptBody)
 		if lastErr == nil {
-			return
+			return lastStatus, lastBody, nil
 		}
 		s.log.Printf("sync: callback %s ke %s gagal (percobaan %d/3): %v", event, target, attempt, lastErr)
 		if attempt < 3 {
 			select {
 			case <-ctx.Done():
-				return
+				return lastStatus, lastBody, lastErr
 			case <-time.After(time.Duration(attempt) * time.Second):
 			}
 		}
@@ -631,7 +644,7 @@ func (s *Syncer) fireCallback(ctx context.Context, a *accountRow, event, payload
 	s.log.Printf("sync: callback %s ke %s gagal setelah 3 percobaan (status=%d)", event, target, lastStatus)
 	s.store.Audit(ctx, "member", a.MemberID, "callback_failed",
 		fmt.Sprintf("event=%s target=%s status=%d", event, target, lastStatus), "")
-	_ = lastBody
+	return lastStatus, lastBody, lastErr
 }
 
 // parseTxDate parses an upstream transaction date. RFC3339 (with an
