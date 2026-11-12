@@ -644,6 +644,140 @@ func (s *Server) handleDanaReversal(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleDanaProfile mengembalikan profil akun DANA milik member (v45).
+//
+// Member TIDAK mengetik nomor: backend menyelesaikan nomor yang dipakai
+// Connecta dari daftar akun partner (GET /b2b/dana/accounts) dengan
+// mencocokkan 4 digit terakhir masked_dana_id dengan nomor tersimpan
+// member. Alasannya (terbukti live 12 Nov + dikonfirmasi developer
+// Connecta): Connecta TIDAK PERNAH mengembalikan nomor/nama utuh —
+// demo fallback ke nomor default "08112311232", produksi memakai nomor
+// tersamar "0878****677" dan nama tersamar. Memanggil profile dengan
+// nomor asli member dijawab 400 ACCOUNT_NOT_FOUND.
+//
+// Fallback bila rekening tidak ada di daftar Connecta: pakai nomor asli
+// tersimpan (best-effort). Bila profile tetap 404, jawab 404
+// "profile_not_found" — rekening belum terdaftar di data Connecta
+// (bukan bug; mis. rekening yang tidak muncul di daftar partner).
+//
+// Tanpa potong kuota inquiry (data rekening sendiri); rate limit
+// 30/mnt/member. Nomor HP Connecta (placeholder/tersamar) TIDAK
+// dikembalikan ke member — yang ditampilkan adalah nomor ter-mask dari
+// DB kita sendiri (yang benar); dari Connecta hanya nama tersamar,
+// level KYC, status, dan terakhir diperbarui. Nomor HP tidak pernah
+// masuk log/audit.
+func (s *Server) handleDanaProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	id, _ := memberID(r)
+	if !s.limiter.Allow("dana-profile:"+id, 30) {
+		writeErr(w, http.StatusTooManyRequests, "rate_limited", "terlalu banyak percobaan, tunggu sebentar lalu coba lagi")
+		return
+	}
+	acctID := r.PathValue("id")
+	if acctID == "" {
+		writeErr(w, http.StatusBadRequest, "invalid_account", "rekening tidak valid")
+		return
+	}
+	var provider, credJSON, phoneMasked, status string
+	err := s.store.DB.QueryRowContext(r.Context(), `SELECT provider, credential_ciphertext, COALESCE(phone_masked,''), status
+		FROM linked_accounts WHERE id=? AND member_id=?`, acctID, id).Scan(&provider, &credJSON, &phoneMasked, &status)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "account_not_found", "rekening tidak ditemukan")
+		return
+	}
+	if provider != "DANA" {
+		writeErr(w, http.StatusBadRequest, "not_dana", "cek profil hanya untuk rekening DANA")
+		return
+	}
+	phone := s.decryptDANAPhone(credJSON)
+	if phone == "" {
+		writeErr(w, http.StatusBadRequest, "invalid_account", "nomor rekening tidak bisa dibaca")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	// Selesaikan nomor yang dipakai Connecta dari daftar akun partner.
+	queryPhone := phone
+	if raw, err := s.connecta.DanaAccounts(ctx); err == nil {
+		var v struct {
+			Data []struct {
+				Phone        string `json:"phone_number"`
+				PhoneAlt     string `json:"phone"`
+				MaskedDanaID string `json:"masked_dana_id"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(raw, &v) == nil {
+			last4 := danaLast4(phone)
+			for _, d := range v.Data {
+				p := d.Phone
+				if p == "" {
+					p = d.PhoneAlt
+				}
+				if p != "" && danaLast4(d.MaskedDanaID) == last4 {
+					queryPhone = p
+					break
+				}
+			}
+		}
+	}
+	raw, err := s.connecta.DanaProfile(ctx, queryPhone)
+	if err != nil {
+		var he *connecta.HTTPError
+		if errors.As(err, &he) {
+			// Bentuk error profile (terverifikasi live): field-nya
+			// "error", BUKAN "code" (berbeda dengan reversal).
+			var body struct {
+				Err string `json:"error"`
+			}
+			_ = json.Unmarshal([]byte(he.Body), &body)
+			if he.Status == http.StatusBadRequest && body.Err == "ACCOUNT_NOT_FOUND" {
+				s.log.Printf("http: dana profile: tidak ditemukan di Connecta member=%s account=%s", id, acctID)
+				writeErr(w, http.StatusNotFound, "profile_not_found", "Profil akun DANA tidak ditemukan di data Connecta. Rekening ini mungkin belum terdaftar di penyedia.")
+				return
+			}
+			s.log.Printf("http: dana profile gagal member=%s account=%s: HTTP %d", id, acctID, he.Status)
+			writeErr(w, http.StatusBadGateway, "provider_error", "penyedia menolak permintaan profil, coba lagi nanti")
+			return
+		}
+		s.log.Printf("http: dana profile gagal member=%s account=%s: %v", id, acctID, err)
+		writeErr(w, http.StatusServiceUnavailable, "provider_error", "layanan penyedia sedang gangguan, coba lagi nanti")
+		return
+	}
+	var prof danaProfileResp
+	if err := json.Unmarshal(raw, &prof); err != nil || !prof.Success {
+		s.log.Printf("http: dana profile: respons tidak bisa dibaca member=%s account=%s", id, acctID)
+		writeErr(w, http.StatusBadGateway, "provider_error", "penyedia mengembalikan respons yang tidak dikenal, coba lagi nanti")
+		return
+	}
+	s.audit(r, "member", id, "account_dana_profile", "DANA account "+acctID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"account_id":   acctID,
+		"phone_masked": phoneMasked,
+		"account_name": prof.Data.AccountName,
+		"kyc_level":    prof.Data.KYCLevel,
+		"status":       strings.ToLower(prof.Data.Status),
+		"updated_at":   prof.Data.UpdatedAt,
+		"message":      "Profil akun DANA berhasil dimuat.",
+	})
+}
+
+// danaProfileResp adalah bentuk respons POST /b2b/dana/profile
+// (terverifikasi live 12 Nov 2026): data berisi nama tersamar, level
+// KYC, status, dan terakhir diperbarui. Nomor HP di respons TIDAK
+// dipakai — demo mengembalikan nomor default, produksi nomor tersamar.
+type danaProfileResp struct {
+	Success bool `json:"success"`
+	Data    struct {
+		AccountID   string `json:"account_id"`
+		AccountName string `json:"account_name"`
+		KYCLevel    string `json:"kyc_level"`
+		Status      string `json:"status"`
+		UpdatedAt   string `json:"updated_at"`
+	} `json:"data"`
+}
+
 // normalizeDanaPhone menyamakan nomor HP DANA: hanya digit, awalan 62
 // diubah ke 0. Dipakai untuk mencocokkan nomor dari respons Connecta
 // dengan nomor yang tersimpan di kredensial terenkripsi member.

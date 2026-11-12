@@ -1614,6 +1614,28 @@ html, body { overflow-x: clip; }
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 20px -12px rgba(15, 23, 42, 0.25);
 }
 
+/* ===== v45: Profil akun DANA (modal label/nilai) ===== */
+/* Tombol halus di baris rekening (sejajar Hapus, warna channel DANA). */
+.member-shell .accounts-card .btn-profile-subtle {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  color: #108ee9; font-weight: 600;
+  border-radius: 12px; padding: 10px 12px; min-height: 44px; white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+.member-shell .accounts-card .btn-profile-subtle:hover { background: #eff6ff; }
+.member-shell .accounts-card .btn-profile-subtle:focus-visible { outline: 2px solid #108ee9; outline-offset: 2px; }
+/* Daftar label/nilai di modal profil: baris berselang, label abu-abu. */
+.member-shell .dana-profile { margin: 0; display: flex; flex-direction: column; }
+.member-shell .dana-profile > div {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 0; border-bottom: 1px solid #f1f5f9;
+}
+.member-shell .dana-profile > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.member-shell .dana-profile > div:first-child { padding-top: 0; }
+.member-shell .dana-profile dt { margin: 0; font-size: 13px; color: #64748b; }
+.member-shell .dana-profile dd { margin: 0; font-size: 14px; font-weight: 600; color: #0f172a; text-align: right; }
+.member-shell .dana-profile dd.mono { font-family: var(--font-mono, ui-monospace, monospace); font-weight: 600; }
+
 /* ===== v35: Inquiry premium — Playground member + admin ===== */
 /* Layout mengikuti referensi user (screenshot 26418_1_dmq2.jpg): header
    badge + chip endpoint, kartu kuota + progress bar, kartu form, kartu

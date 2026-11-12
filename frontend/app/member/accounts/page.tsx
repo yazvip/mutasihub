@@ -280,6 +280,10 @@ function AccountsContent() {
   const [addTab, setAddTab] = useState<'dana' | 'bca'>('dana');
   // v44: panduan autorisasi DANA (modal berisi 5 langkah + screenshot).
   const [showGuide, setShowGuide] = useState(false);
+  // v45: profil DANA (modal berisi nama tersamar, KYC, status).
+  const [profile, setProfile] = useState<{ accountId: string; phoneMasked: string; accountName: string; kycLevel: string; status: string; updatedAt: string } | null>(null);
+  const [profileBusy, setProfileBusy] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -439,6 +443,34 @@ function AccountsContent() {
     }
   }
 
+  // v45: cek profil DANA milik member sendiri (POST /api/v1/accounts/{id}/dana-profile).
+  // Backend menyelesaikan nomor yang dipakai Connecta; member tidak mengetik nomor.
+  async function loadProfile(accountId: string) {
+    setProfileBusy(accountId);
+    setProfileError(null);
+    setProfile(null);
+    try {
+      const d = await apiPost<any>(`/api/v1/accounts/${accountId}/dana-profile`, {});
+      setProfile({
+        accountId,
+        phoneMasked: d.phone_masked ?? '',
+        accountName: d.account_name ?? '-',
+        kycLevel: d.kyc_level ?? '-',
+        status: d.status ?? '-',
+        updatedAt: d.updated_at ?? '',
+      });
+    } catch (err) {
+      setProfileError(friendlyError(err));
+    } finally {
+      setProfileBusy(null);
+    }
+  }
+
+  function closeProfile() {
+    setProfile(null);
+    setProfileError(null);
+  }
+
   return (
     <>
       <PageHeading eyebrow="Rekening terhubung" title="Rekening" description="Hubungkan rekening milik Anda sendiri. DANA memakai nomor HP Anda; BCA memakai nomor rekening + User ID + PIN KlikBCA Anda. Kredensial terenkripsi AES-256 dan hanya dipakai membaca mutasi (read-only)." />
@@ -569,6 +601,16 @@ function AccountsContent() {
                         onClick={() => openBinding(a.id)}
                       >
                         {rebindBusy === a.id ? 'Memproses… (maks. 15 dtk)' : 'Otorisasi DANA'}
+                      </Button>
+                    )}
+                    {a.provider === 'DANA' && a.status === 'active' && (
+                      <Button
+                        variant="ghost"
+                        className="btn-profile-subtle"
+                        disabled={profileBusy === a.id}
+                        onClick={() => loadProfile(a.id)}
+                      >
+                        {profileBusy === a.id ? 'Memuat…' : 'Cek Profil'}
                       </Button>
                     )}
                     <Button variant="ghost" className="btn-delete-subtle" onClick={() => removeAccount(a.id)}>
@@ -792,6 +834,44 @@ function AccountsContent() {
               </li>
             ))}
           </ol>
+        </Modal>
+      )}
+
+      {(profile || profileError) && (
+        <Modal
+          title="Profil Akun DANA"
+          subtitle="Data dari Connecta — nama dan nomor ditampilkan tersamar oleh penyedia."
+          onClose={closeProfile}
+          topStripColor="#108ee9"
+        >
+          {profileError ? (
+            <p className="muted" style={{ margin: 0 }}>{profileError}</p>
+          ) : profile ? (
+            <dl className="dana-profile">
+              <div>
+                <dt>Nama</dt>
+                <dd>{profile.accountName}</dd>
+              </div>
+              <div>
+                <dt>Nomor DANA</dt>
+                <dd className="mono">{profile.phoneMasked}</dd>
+              </div>
+              <div>
+                <dt>Level KYC</dt>
+                <dd>{profile.kycLevel}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd><StatusBadge status={profile.status} /></dd>
+              </div>
+              {profile.updatedAt ? (
+                <div>
+                  <dt>Terakhir diperbarui</dt>
+                  <dd>{formatDateWIB(profile.updatedAt, true, true)}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
         </Modal>
       )}
     </>
