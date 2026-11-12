@@ -558,13 +558,14 @@ func (s *Server) handleDanaReversal(w http.ResponseWriter, r *http.Request) {
 	var rev struct {
 		Success bool `json:"success"`
 		Data    struct {
-			AccountID   string  `json:"account_id"`
-			AccountName string  `json:"account_name"`
-			PhoneNumber string  `json:"phone_number"`
-			Status      string  `json:"status"`
-			Balance     float64 `json:"balance_amount"`
-			OTT         string  `json:"ott"`
-			PartnerID   string  `json:"partner_id"`
+			AccountID    string  `json:"account_id"`
+			AccountName  string  `json:"account_name"`
+			PhoneNumber  string  `json:"phone_number"`
+			MaskedDanaID string  `json:"masked_dana_id"`
+			Status       string  `json:"status"`
+			Balance      float64 `json:"balance_amount"`
+			OTT          string  `json:"ott"`
+			PartnerID    string  `json:"partner_id"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &rev); err != nil || !rev.Success {
@@ -572,19 +573,45 @@ func (s *Server) handleDanaReversal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "provider_error", "penyedia mengembalikan respons yang tidak dikenal, coba lagi nanti")
 		return
 	}
-	// Cocokkan rekening lokal dari nomor HP di respons (bukan dari URL —
-	// nomor di URL bisa apa saja; nomor dari Connecta adalah yang
-	// diotorisasi). Cocokkan setelah normalisasi digit (62 -> 0).
+	// Cocokkan rekening lokal. Urutan (v43a): nomor dari respons Connecta
+	// TIDAK bisa diandalkan — field phone_number mereka mengembalikan
+	// nomor placeholder (terbukti live 12 Nov: "08112311232" untuk
+	// rekening yang masked_dana_id-nya berakhir 3677, nomor member
+	// 087841903677). Jadi:
+	//  1) 4 digit terakhir dari masked_dana_id (identitas asli, tersamar),
+	//  2) cocok persis nomor HP,
+	//  3) fallback: member hanya punya satu rekening DANA (atau satu yang
+	//     pending) — reversal ini dipicu sesi member sendiri sesaat
+	//     setelah binding, jadi rekening itu pasti yang diotorisasi.
+	//     Bila ada lebih dari satu kandidat, jangan tebak -> 404.
 	phone := normalizeDanaPhone(rev.Data.PhoneNumber)
-	if phone == "" {
-		writeErr(w, http.StatusBadGateway, "provider_error", "penyedia tidak mengembalikan nomor HP, coba lagi nanti")
-		return
+	var acctID, phoneMasked, curStatus string
+	var found bool
+	var matchHow string
+	if last4 := danaLast4(rev.Data.MaskedDanaID); last4 != "" {
+		acctID, phoneMasked, curStatus, found = s.findMemberDANAAccountByLast4(r.Context(), id, last4)
+		if found {
+			matchHow = "masked_dana_id"
+		}
 	}
-	acctID, phoneMasked, curStatus, found := s.findMemberDANAAccount(r.Context(), id, phone)
+	if !found && phone != "" {
+		acctID, phoneMasked, curStatus, found = s.findMemberDANAAccount(r.Context(), id, phone)
+		if found {
+			matchHow = "phone"
+		}
+	}
 	if !found {
+		acctID, phoneMasked, curStatus, found = s.findMemberDANASingleAccount(r.Context(), id)
+		if found {
+			matchHow = "single_account"
+		}
+	}
+	if !found {
+		s.log.Printf("http: dana reversal: tidak ada rekening cocok member=%s", id)
 		writeErr(w, http.StatusNotFound, "account_not_found", "Nomor DANA yang diotorisasi tidak cocok dengan rekening terdaftar. Periksa nomornya lalu hubungkan lagi.")
 		return
 	}
+	s.log.Printf("http: dana reversal: cocok member=%s account=%s via %s", id, acctID, matchHow)
 	if curStatus == "active" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"account_id": acctID, "status": "active", "already_active": true,
@@ -634,6 +661,40 @@ func normalizeDanaPhone(p string) string {
 	return d
 }
 
+// danaLast4 mengambil 4 digit terakhir dari sebuah pengenal (mis.
+// masked_dana_id "62-*******3677" -> "3677"). Kosong bila digit < 4.
+func danaLast4(s string) string {
+	var d []rune
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			d = append(d, r)
+		}
+	}
+	if len(d) < 4 {
+		return ""
+	}
+	return string(d[len(d)-4:])
+}
+
+// decryptDANAPhone mendekripsi kredensial rekening DANA dan mengembalikan
+// nomor HP ternormalisasi. Gagal dekripsi / format tak dikenal -> "".
+func (s *Server) decryptDANAPhone(credJSON string) string {
+	if len(s.encKey) == 0 {
+		return ""
+	}
+	plain, err := crypto.Decrypt(s.encKey, credJSON)
+	if err != nil {
+		return ""
+	}
+	var cred struct {
+		Phone string `json:"phone"`
+	}
+	if err := json.Unmarshal([]byte(plain), &cred); err != nil {
+		return ""
+	}
+	return normalizeDanaPhone(cred.Phone)
+}
+
 // findMemberDANAAccount mencari rekening DANA milik member yang nomornya
 // cocok (setelah normalisasi). Mengembalikan id, nomor ter-mask, dan
 // status saat ini. Kredensial didekripsi satu per satu — member normalnya
@@ -650,22 +711,78 @@ func (s *Server) findMemberDANAAccount(ctx context.Context, memberID, phone stri
 		if err := rows.Scan(&id, &credJSON, &masked, &st); err != nil {
 			continue
 		}
-		if len(s.encKey) == 0 {
-			continue
-		}
-		plain, err := crypto.Decrypt(s.encKey, credJSON)
-		if err != nil {
-			continue
-		}
-		var cred struct {
-			Phone string `json:"phone"`
-		}
-		if err := json.Unmarshal([]byte(plain), &cred); err != nil {
-			continue
-		}
-		if normalizeDanaPhone(cred.Phone) == phone {
+		if s.decryptDANAPhone(credJSON) == phone {
 			return id, masked, st, true
 		}
+	}
+	return "", "", "", false
+}
+
+// findMemberDANAAccountByLast4 mencari rekening DANA milik member yang
+// 4 digit terakhir nomornya cocok dengan last4. Hanya dipakai bila
+// hasilnya tunggal (tepat satu rekening cocok) — bila lebih dari satu,
+// jangan tebak.
+func (s *Server) findMemberDANAAccountByLast4(ctx context.Context, memberID, last4 string) (acctID, phoneMasked, status string, found bool) {
+	if last4 == "" {
+		return "", "", "", false
+	}
+	rows, err := s.store.DB.QueryContext(ctx, `SELECT id, credential_ciphertext, COALESCE(phone_masked,''), status
+		FROM linked_accounts WHERE member_id=? AND provider='DANA'`, memberID)
+	if err != nil {
+		return "", "", "", false
+	}
+	defer rows.Close()
+	var matchID, matchMasked, matchStatus string
+	matches := 0
+	for rows.Next() {
+		var id, credJSON, masked, st string
+		if err := rows.Scan(&id, &credJSON, &masked, &st); err != nil {
+			continue
+		}
+		if danaLast4(s.decryptDANAPhone(credJSON)) == last4 {
+			matchID, matchMasked, matchStatus = id, masked, st
+			matches++
+		}
+	}
+	if matches == 1 {
+		return matchID, matchMasked, matchStatus, true
+	}
+	return "", "", "", false
+}
+
+// findMemberDANASingleAccount mengembalikan rekening DANA milik member
+// bila tidak ambigu: tepat satu rekening DANA total, atau tepat satu yang
+// masih pending. Dipakai sebagai fallback reversal (v43a) — bila member
+// punya beberapa rekening DANA dan tidak ada yang tunggal, jangan tebak.
+func (s *Server) findMemberDANASingleAccount(ctx context.Context, memberID string) (acctID, phoneMasked, status string, found bool) {
+	rows, err := s.store.DB.QueryContext(ctx, `SELECT id, COALESCE(phone_masked,''), status
+		FROM linked_accounts WHERE member_id=? AND provider='DANA'`, memberID)
+	if err != nil {
+		return "", "", "", false
+	}
+	defer rows.Close()
+	var all, pending []struct {
+		id, masked, st string
+	}
+	for rows.Next() {
+		var id, masked, st string
+		if err := rows.Scan(&id, &masked, &st); err != nil {
+			continue
+		}
+		all = append(all, struct {
+			id, masked, st string
+		}{id, masked, st})
+		if st == "pending" {
+			pending = append(pending, struct {
+				id, masked, st string
+			}{id, masked, st})
+		}
+	}
+	if len(all) == 1 {
+		return all[0].id, all[0].masked, all[0].st, true
+	}
+	if len(pending) == 1 {
+		return pending[0].id, pending[0].masked, pending[0].st, true
 	}
 	return "", "", "", false
 }
