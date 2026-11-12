@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { apiDelete, apiGet, apiPost, friendlyError } from '../../../lib/api';
 import { formatDateWIB, formatRupiah, providerLabel } from '../../../lib/format';
 import {
@@ -182,6 +182,9 @@ function AccountsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // v43: pengaman sekali-kirim reversal DANA — auth_code sekali pakai,
+  // effect tidak boleh memanggil endpoint dua kali (mis. double-invoke).
+  const reversalTried = useRef(false);
 
   const [danaPhone, setDanaPhone] = useState('');
   const [bcaAccountNo, setBcaAccountNo] = useState('');
@@ -274,6 +277,30 @@ function AccountsContent() {
       setNotice('Kembali dari proses binding DANA — memeriksa status rekening…');
     }
     load();
+    // v43: reversal DANA — teruskan auth_code ke backend SEGERA (TTL 60
+    // dtk, sekali pakai). Sebelum v43 halaman hanya membaca param dana
+    // sehingga kode kedaluwarsa tanpa pernah dipakai dan rekening stuck
+    // pending. Backend memanggil POST /api/v1/reversal-dana Connecta
+    // lalu mengaktifkan rekening dari responsnya (tanpa menunggu webhook).
+    const authCode = searchParams.get('auth_code');
+    if (authCode && !reversalTried.current) {
+      reversalTried.current = true;
+      setNotice('Memproses otorisasi DANA…');
+      apiPost<{ account_id: string; status: string; balance_cents: number; message?: string }>(
+        '/api/v1/accounts/dana/reversal',
+        { callback_url: window.location.href },
+      )
+        .then((d) => {
+          setNotice(d.message || 'DANA berhasil terhubung dan aktif.');
+          window.history.replaceState(null, '', '/member/accounts');
+          load();
+        })
+        .catch((e) => {
+          setError(friendlyError(e));
+          window.history.replaceState(null, '', '/member/accounts');
+          load();
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 

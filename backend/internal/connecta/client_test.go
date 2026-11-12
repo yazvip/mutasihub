@@ -2,6 +2,8 @@ package connecta
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,5 +98,81 @@ func TestDanaTransactionsParsing(t *testing.T) {
 	}
 	if len(txs) != 1 || txs[0].Amount != 100000 || txs[0].Sender != "Budi" {
 		t.Fatalf("txs = %+v", txs)
+	}
+}
+
+func TestDanaReversalPublic(t *testing.T) {
+	var calls atomic.Int32
+	var gotKey, gotUA, gotCT, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		gotKey = r.Header.Get("X-API-KEY")
+		gotUA = r.Header.Get("User-Agent")
+		gotCT = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"account_id":"acc-1","status":"ACTIVE","phone_number":"08112311232","balance_amount":840}}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-key-123")
+	raw, status, err := c.DanaReversal(context.Background(), "https://mutasi.rajacek.com/member/accounts?dana=callback&auth_code=CODE&state=STATE", "b2b-083135931670")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != 200 {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if gotKey != "" {
+		t.Fatalf("X-API-KEY = %q, want empty (public endpoint)", gotKey)
+	}
+	if gotUA != "ConnectaWebhook/1.0" {
+		t.Fatalf("User-Agent = %q, want ConnectaWebhook/1.0", gotUA)
+	}
+	if gotCT != "application/json" {
+		t.Fatalf("Content-Type = %q", gotCT)
+	}
+	if !strings.Contains(gotBody, `"partner_id":"b2b-083135931670"`) {
+		t.Fatalf("body = %s, want partner_id", gotBody)
+	}
+	// encoding/json meng-escape & menjadi \u0026 di string — parse JSON
+	// untuk membandingkan nilai callback_url apa adanya.
+	var body struct {
+		CallbackURL string `json:"callback_url"`
+		PartnerID   string `json:"partner_id"`
+	}
+	if err := json.Unmarshal([]byte(gotBody), &body); err != nil {
+		t.Fatalf("body bukan JSON: %v (%s)", err, gotBody)
+	}
+	if body.CallbackURL != "https://mutasi.rajacek.com/member/accounts?dana=callback&auth_code=CODE&state=STATE" {
+		t.Fatalf("callback_url = %q", body.CallbackURL)
+	}
+	if body.PartnerID != "b2b-083135931670" {
+		t.Fatalf("partner_id = %q", body.PartnerID)
+	}
+	if !strings.Contains(string(raw), `"ACTIVE"`) {
+		t.Fatalf("raw = %s", raw)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1 (single attempt)", calls.Load())
+	}
+}
+
+func TestDanaReversalNoRetryOn5xx(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`bad gateway`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "k")
+	if _, _, err := c.DanaReversal(context.Background(), "https://x/member/accounts?dana=callback&auth_code=C", "b2b-1"); err == nil {
+		t.Fatal("expected error on 502")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1 (single attempt, no retry on 5xx)", calls.Load())
 	}
 }

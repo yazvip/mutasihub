@@ -115,6 +115,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/accounts", s.authMember(s.handleCreateAccount))
 	m.HandleFunc("DELETE /api/v1/accounts/{id}", s.authMember(s.handleDeleteAccount))
 	m.HandleFunc("POST /api/v1/accounts/{id}/binding-url", s.authMember(s.handleRebindDANA))
+	// Reversal DANA (v43): teruskan callback redirect OAuth ke Connecta.
+	m.HandleFunc("POST /api/v1/accounts/dana/reversal", s.authMember(s.handleDanaReversal))
 	m.HandleFunc("GET /api/v1/mutasi", s.handleMutasi) // session OR api-key auth
 	m.HandleFunc("GET /api/v1/banks", s.authMember(s.handleBankCodes))
 	m.HandleFunc("POST /api/v1/inquiry/bank-account", s.authMember(s.handleBankInquiry))

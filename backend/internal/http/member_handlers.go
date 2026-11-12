@@ -6,14 +6,17 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"mutasi-hub/internal/connecta"
 	"mutasi-hub/internal/crypto"
 	"mutasi-hub/internal/domain"
 )
@@ -474,6 +477,197 @@ func (s *Server) handleRebindDANA(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "member", id, "account_rebind", "DANA account "+acctID)
 	writeJSON(w, http.StatusOK, map[string]any{"binding_url": bindingURL})
+}
+
+// handleDanaReversal meneruskan callback redirect DANA ke Connecta (v43).
+//
+// Alur OAuth DANA: member otorisasi di DANA lalu browser mendarat di
+// /member/accounts?dana=callback&auth_code=...&state=... — auth_code itu
+// sekali pakai dengan TTL 60 detik. Sebelum v43 halaman hanya membaca
+// param dana dan menampilkan banner, sehingga kode kedaluwarsa tanpa
+// pernah dipakai dan rekening stuck pending selamanya (webhook Connecta
+// yang seharusnya mengaktifkan juga ditolak 401).
+//
+// Per dokumen + contoh curl Connecta terbaru: panggil POST
+// /api/v1/reversal-dana dengan body {"callback_url", "partner_id"},
+// header Content-Type + User-Agent ConnectaWebhook/1.0, TANPA X-API-KEY
+// (endpoint publik; auth_code + partner_id adalah kredensialnya).
+// Sukses 200 mengembalikan data akun (status ACTIVE, nomor HP, saldo,
+// OTT) — dari nomor HP itu kami cocokkan rekening lokal member dan
+// mengaktifkannya langsung, tanpa menunggu webhook.
+//
+// Keamanan: callback_url WAJIB mengarah ke host + path redirect kita
+// sendiri (jangan teruskan URL sembarangan ke Connecta); auth_code dan
+// OTT TIDAK PERNAH masuk log/audit — hanya id member + hasil.
+func (s *Server) handleDanaReversal(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	id, _ := memberID(r)
+	if !s.limiter.Allow("dana-reversal:"+id, 5) {
+		writeErr(w, http.StatusTooManyRequests, "rate_limited", "terlalu banyak percobaan, tunggu sebentar lalu coba lagi")
+		return
+	}
+	var req struct {
+		CallbackURL string `json:"callback_url"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	cb, err := url.Parse(strings.TrimSpace(req.CallbackURL))
+	if err != nil || cb.Scheme == "" || cb.Host == "" {
+		writeErr(w, http.StatusBadRequest, "invalid_callback_url", "URL callback tidak valid")
+		return
+	}
+	// Guard: hanya teruskan URL redirect milik kita sendiri.
+	fe, ferr := url.Parse(strings.TrimRight(s.cfg.FrontendURL, "/"))
+	if ferr != nil || !strings.EqualFold(cb.Host, fe.Host) || cb.Path != "/member/accounts" || cb.Query().Get("dana") != "callback" {
+		writeErr(w, http.StatusBadRequest, "invalid_callback_url", "URL callback bukan dari halaman rekening MutasiHub")
+		return
+	}
+	if cb.Query().Get("auth_code") == "" {
+		writeErr(w, http.StatusBadRequest, "missing_auth_code", "kode otorisasi DANA tidak ditemukan di URL callback")
+		return
+	}
+	if strings.TrimSpace(s.cfg.ConnectaBaseURL) == "" || strings.TrimSpace(s.cfg.ConnectaPartnerID) == "" {
+		writeErr(w, http.StatusServiceUnavailable, "reversal_not_configured", "penerusan callback DANA belum dikonfigurasi, hubungi admin")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	raw, _, err := s.connecta.DanaReversal(ctx, strings.TrimSpace(req.CallbackURL), s.cfg.ConnectaPartnerID)
+	if err != nil {
+		var he *connecta.HTTPError
+		if errors.As(err, &he) {
+			s.log.Printf("http: dana reversal gagal member=%s: HTTP %d", id, he.Status)
+			var body struct {
+				Code string `json:"code"`
+			}
+			_ = json.Unmarshal([]byte(he.Body), &body)
+			if body.Code == "AUTH_CODE_EXPIRED" {
+				writeErr(w, http.StatusBadRequest, "auth_code_expired", "Kode otorisasi DANA sudah kedaluwarsa (60 detik). Klik 'Hubungkan DANA' lagi untuk mendapatkan kode baru.")
+				return
+			}
+			writeErr(w, http.StatusBadGateway, "provider_error", "penyedia menolak penerusan callback, coba lagi nanti")
+			return
+		}
+		s.log.Printf("http: dana reversal gagal member=%s: %v", id, err)
+		writeErr(w, http.StatusServiceUnavailable, "provider_error", "layanan penyedia sedang gangguan, coba lagi nanti")
+		return
+	}
+	var rev struct {
+		Success bool `json:"success"`
+		Data    struct {
+			AccountID   string  `json:"account_id"`
+			AccountName string  `json:"account_name"`
+			PhoneNumber string  `json:"phone_number"`
+			Status      string  `json:"status"`
+			Balance     float64 `json:"balance_amount"`
+			OTT         string  `json:"ott"`
+			PartnerID   string  `json:"partner_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &rev); err != nil || !rev.Success {
+		s.log.Printf("http: dana reversal: respons tidak bisa dibaca member=%s", id)
+		writeErr(w, http.StatusBadGateway, "provider_error", "penyedia mengembalikan respons yang tidak dikenal, coba lagi nanti")
+		return
+	}
+	// Cocokkan rekening lokal dari nomor HP di respons (bukan dari URL —
+	// nomor di URL bisa apa saja; nomor dari Connecta adalah yang
+	// diotorisasi). Cocokkan setelah normalisasi digit (62 -> 0).
+	phone := normalizeDanaPhone(rev.Data.PhoneNumber)
+	if phone == "" {
+		writeErr(w, http.StatusBadGateway, "provider_error", "penyedia tidak mengembalikan nomor HP, coba lagi nanti")
+		return
+	}
+	acctID, phoneMasked, curStatus, found := s.findMemberDANAAccount(r.Context(), id, phone)
+	if !found {
+		writeErr(w, http.StatusNotFound, "account_not_found", "Nomor DANA yang diotorisasi tidak cocok dengan rekening terdaftar. Periksa nomornya lalu hubungkan lagi.")
+		return
+	}
+	if curStatus == "active" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"account_id": acctID, "status": "active", "already_active": true,
+			"phone_masked": phoneMasked,
+			"message":      "DANA sudah aktif.",
+		})
+		return
+	}
+	if !strings.EqualFold(rev.Data.Status, "ACTIVE") {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"account_id": acctID, "status": strings.ToLower(rev.Data.Status),
+			"phone_masked": phoneMasked,
+			"message":      "Reversal berhasil tapi status akun di penyedia: " + rev.Data.Status + ". Tunggu sebentar lalu refresh halaman.",
+		})
+		return
+	}
+	balanceCents := int64(math.Round(rev.Data.Balance * 100))
+	if _, err := s.store.DB.ExecContext(r.Context(), `UPDATE linked_accounts
+		SET status='active', authorized_at=COALESCE(authorized_at, NOW()), balance_cents=?, last_synced_at=NOW()
+		WHERE id=? AND member_id=?`, balanceCents, acctID, id); err != nil {
+		s.log.Printf("http: dana reversal: aktivasi gagal member=%s account=%s: %v", id, acctID, err)
+		writeErr(w, http.StatusInternalServerError, "db_error", "gagal mengaktifkan rekening, coba lagi nanti")
+		return
+	}
+	s.audit(r, "member", id, "account_dana_reversal", "DANA account "+acctID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"account_id": acctID, "status": "active", "balance_cents": balanceCents,
+		"phone_masked": phoneMasked,
+		"message":      "DANA berhasil terhubung dan aktif.",
+	})
+}
+
+// normalizeDanaPhone menyamakan nomor HP DANA: hanya digit, awalan 62
+// diubah ke 0. Dipakai untuk mencocokkan nomor dari respons Connecta
+// dengan nomor yang tersimpan di kredensial terenkripsi member.
+func normalizeDanaPhone(p string) string {
+	var b strings.Builder
+	for _, r := range p {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	d := b.String()
+	if strings.HasPrefix(d, "62") {
+		d = "0" + d[2:]
+	}
+	return d
+}
+
+// findMemberDANAAccount mencari rekening DANA milik member yang nomornya
+// cocok (setelah normalisasi). Mengembalikan id, nomor ter-mask, dan
+// status saat ini. Kredensial didekripsi satu per satu — member normalnya
+// punya segelintir rekening, jadi ini murah.
+func (s *Server) findMemberDANAAccount(ctx context.Context, memberID, phone string) (acctID, phoneMasked, status string, found bool) {
+	rows, err := s.store.DB.QueryContext(ctx, `SELECT id, credential_ciphertext, COALESCE(phone_masked,''), status
+		FROM linked_accounts WHERE member_id=? AND provider='DANA'`, memberID)
+	if err != nil {
+		return "", "", "", false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, credJSON, masked, st string
+		if err := rows.Scan(&id, &credJSON, &masked, &st); err != nil {
+			continue
+		}
+		if len(s.encKey) == 0 {
+			continue
+		}
+		plain, err := crypto.Decrypt(s.encKey, credJSON)
+		if err != nil {
+			continue
+		}
+		var cred struct {
+			Phone string `json:"phone"`
+		}
+		if err := json.Unmarshal([]byte(plain), &cred); err != nil {
+			continue
+		}
+		if normalizeDanaPhone(cred.Phone) == phone {
+			return id, masked, st, true
+		}
+	}
+	return "", "", "", false
 }
 
 // escapeLike escapes LIKE wildcards (%, _, \) so a sender filter

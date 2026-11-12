@@ -175,6 +175,55 @@ func (c *Client) DanaBinding(ctx context.Context, phone, clientRef, redirectURL 
 	return c.post(ctx, "/b2b/dana/binding", body)
 }
 
+// DanaReversal posts POST /reversal-dana (v43) — the public endpoint that
+// receives the forwarded browser callback after DANA OAuth. It exchanges
+// the single-use auth_code (TTL 60s) for an Access Token + official OTT,
+// syncs the DANA profile/balance and activates the account in Connecta.
+//
+// This call is deliberately NOT routed through do(): per Connecta's docs
+// and curl example, the reversal endpoint takes NO X-API-KEY header (the
+// auth_code + partner_id are the credentials), requires User-Agent
+// ConnectaWebhook/1.0, and is a single attempt — the code is single-use,
+// so a retry after a 5xx could double-consume it.
+func (c *Client) DanaReversal(ctx context.Context, callbackURL, partnerID string) (json.RawMessage, int, error) {
+	if strings.TrimSpace(c.baseURL) == "" {
+		return nil, 0, fmt.Errorf("connecta: base URL not configured (CONNECTA_BASE_URL)")
+	}
+	if strings.TrimSpace(callbackURL) == "" || strings.TrimSpace(partnerID) == "" {
+		return nil, 0, fmt.Errorf("connecta: reversal needs callback_url and partner_id")
+	}
+	bodyBytes, err := json.Marshal(map[string]string{
+		"callback_url": callbackURL,
+		"partner_id":   partnerID,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("connecta: marshal reversal request: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/reversal-dana", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, 0, fmt.Errorf("connecta: build reversal request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "ConnectaWebhook/1.0")
+	// NOTE: no X-API-KEY — the endpoint is public per Connecta's docs.
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("connecta: POST /reversal-dana: %w", err)
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, resp.StatusCode, fmt.Errorf("connecta: read reversal response: %w", readErr)
+	}
+	c.log.Printf("connecta POST /reversal-dana -> %d (single attempt)", resp.StatusCode)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, resp.StatusCode, &HTTPError{Method: http.MethodPost, Path: "/reversal-dana", Status: resp.StatusCode, Body: string(raw)}
+	}
+	return json.RawMessage(raw), resp.StatusCode, nil
+}
+
 // DanaAccounts fetches GET /b2b/dana/accounts.
 func (c *Client) DanaAccounts(ctx context.Context) (json.RawMessage, error) {
 	return c.get(ctx, "/b2b/dana/accounts", nil)

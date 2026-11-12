@@ -20,6 +20,7 @@ type Config struct {
 	ConnectaBaseURL       string
 	ConnectaAPIKey        string
 	ConnectaWebhookSecret string
+	ConnectaPartnerID     string
 
 	GoogleClientID     string
 	GoogleClientSecret string
@@ -88,6 +89,7 @@ func Load() *Config {
 		ConnectaBaseURL:       strings.TrimRight(getenv("CONNECTA_BASE_URL", ""), "/"),
 		ConnectaAPIKey:        os.Getenv("CONNECTA_API_KEY"),
 		ConnectaWebhookSecret: os.Getenv("CONNECTA_WEBHOOK_SECRET"),
+		ConnectaPartnerID:     os.Getenv("CONNECTA_PARTNER_ID"),
 
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
