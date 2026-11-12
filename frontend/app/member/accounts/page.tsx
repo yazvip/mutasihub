@@ -176,6 +176,41 @@ type Account = {
   sync_paused?: boolean;
 };
 
+// v44: panduan autorisasi akun DANA — 5 langkah + screenshot HP user
+// (urut sesuai kiriman). Gambar di public/images/dana-auth/.
+const DANA_GUIDE_STEPS: { title: string; text: string; img: string; alt: string }[] = [
+  {
+    title: 'Masukkan nomor HP',
+    text: 'Ketuk tombol Otorisasi DANA. Kamu akan diarahkan ke halaman DANA — masukkan nomor HP sebagai ID DANA, lalu ketuk LANJUTKAN.',
+    img: '/images/dana-auth/step-1.jpg',
+    alt: 'Halaman DANA: masukkan nomor HP sebagai ID DANA',
+  },
+  {
+    title: 'Verifikasi dengan PIN DANA',
+    text: 'Jika muncul verifikasi Passkey, ketuk PAKAI PIN DANA. Tenang — kamu masih berada di halaman DANA, jadi PIN kamu tetap aman dan tidak pernah kami ketahui.',
+    img: '/images/dana-auth/step-2.jpg',
+    alt: 'Verifikasi Passkey gagal — pilih PAKAI PIN DANA',
+  },
+  {
+    title: 'Tunggu konfirmasi',
+    text: 'Layar Menunggu Konfirmasi muncul. Buka aplikasi DANA — biasanya ada notifikasi, atau buka manual lalu cek Inbox — dan setujui permintaan login.',
+    img: '/images/dana-auth/step-3.jpg',
+    alt: 'Menunggu konfirmasi di aplikasi DANA',
+  },
+  {
+    title: 'Setujui di aplikasi DANA',
+    text: 'Di aplikasi DANA, ketuk VERIFIKASI pada permintaan login ke MutasiHub.',
+    img: '/images/dana-auth/step-4.jpg',
+    alt: 'Permintaan login ke MutasiHub di aplikasi DANA',
+  },
+  {
+    title: 'Lanjutkan & kembali ke browser',
+    text: 'Jika muncul peringatan modus penipuan, ketuk LANJUTKAN — ini permintaan yang kamu buat sendiri dari browser. Setelah disetujui, kembali ke browser: kamu akan kembali ke halaman rekening dengan status berhasil. Tenang, kami hanya membaca saldo dan mutasi (read-only) — tidak pernah bisa transfer atau mengubah saldo DANA kamu.',
+    img: '/images/dana-auth/step-5.jpg',
+    alt: 'Peringatan modus penipuan — ketuk LANJUTKAN',
+  },
+];
+
 function AccountsContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -243,6 +278,8 @@ function AccountsContent() {
   // Form tambah rekening TIDAK tampil langsung — hanya lewat modal.
   const [showAdd, setShowAdd] = useState(false);
   const [addTab, setAddTab] = useState<'dana' | 'bca'>('dana');
+  // v44: panduan autorisasi DANA (modal berisi 5 langkah + screenshot).
+  const [showGuide, setShowGuide] = useState(false);
 
   async function load() {
     try {
@@ -429,10 +466,13 @@ function AccountsContent() {
             <br />
             Buka tautan otorisasi, setujui di aplikasi DANA, lalu kembali ke
             sini — status rekening berubah aktif otomatis (maks. ~1 menit).
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <a href={bindingUrl} target="_blank" rel="noreferrer" className="btn google-btn">
                 Buka Otorisasi DANA
               </a>
+              <Button variant="ghost" onClick={() => setShowGuide(true)}>
+                Cara Autorisasi
+              </Button>
             </div>
           </div>
         </div>
@@ -620,6 +660,9 @@ function AccountsContent() {
                 <li>Buka tautan otorisasi yang muncul di aplikasi DANA.</li>
                 <li>Setujui akses, rekening berubah jadi aktif di sini.</li>
               </ol>
+              <button type="button" className="dana-guide-link" onClick={() => setShowGuide(true)}>
+                Cara autorisasi akun DANA →
+              </button>
             </>
           ) : (
             <form onSubmit={addBca}>
@@ -722,6 +765,33 @@ function AccountsContent() {
             </form>
           )}
           </div>
+        </Modal>
+      )}
+
+      {showGuide && (
+        <Modal
+          title="Cara Autorisasi Akun DANA"
+          subtitle="Ikuti 5 langkah ini — prosesnya hanya butuh sekitar 1 menit."
+          onClose={() => setShowGuide(false)}
+          topStripColor="#108ee9"
+        >
+          <ol className="dana-guide">
+            {DANA_GUIDE_STEPS.map((s, i) => (
+              <li key={s.img} className="dana-guide-step">
+                <div className="dana-guide-head">
+                  <span className="dana-guide-num" aria-hidden="true">{i + 1}</span>
+                  <h4>{s.title}</h4>
+                </div>
+                <p>{s.text}</p>
+                <img
+                  className="dana-guide-img"
+                  src={s.img}
+                  alt={s.alt}
+                  loading="lazy"
+                />
+              </li>
+            ))}
+          </ol>
         </Modal>
       )}
     </>

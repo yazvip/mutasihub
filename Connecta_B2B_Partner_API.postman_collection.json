@@ -1,0 +1,636 @@
+{
+  "info": {
+    "name": "Connecta B2B Partner Open API Suite",
+    "_postman_id": "connecta-b2b-suite-v1",
+    "description": "Koleksi API B2B Connecta: DANA Hub Suite (OAuth Binding Webhook, Cek Saldo Real-Time, Profil, Riwayat Mutasi 1 Bulan, SNAP Bank Inquiry, Disbursement Topup) dan Mutasi KlikBCA (Kredensial, Cookies, Mutasi CR/DB).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-KEY",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Info & Kuota Partner",
+      "item": [
+        {
+          "name": "GET Dokumentasi Spesifikasi API",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "docs"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET Kuota Akun Demo Partner",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/quota",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "quota"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET Webhook URL Partner",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/webhook",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "webhook"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST Simpan Webhook URL Partner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"webhook_url\": \"https://your-domain.com/webhook/callback\",\n  \"webhook_secret\": \"sec_partner_123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/webhook",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "webhook"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. DANA Hub Suite (Flagging Partner)",
+      "item": [
+        {
+          "name": "POST Binding DANA (Webhook Respon)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"08112311232\",\n  \"client_ref\": \"REF-MERCHANT-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/binding",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "binding"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST Reversal Webhook DANA (Forwarding Callback & Ingestion)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "User-Agent",
+                "value": "ConnectaWebhook/1.0",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callback_url\": \"https://mutasi.rajacek.com/member/accounts?dana=callback&auth_code=fObHXwFeaqro86x0nrE24WI3CFVPlQBTbNyL8100&state=STATE-1794467177430\",\n  \"partner_id\": \"b2b-083135931670\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reversal-dana",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reversal-dana"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET List Akun DANA Milik Partner",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "accounts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST Cek Saldo DANA by Phone / Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"08112311232\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "balance"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST Cek Profil Akun DANA by Phone",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"08112311232\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "profile"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET Riwayat Transaksi 1 Bulan DANA",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/transactions?phone=08112311232&page=1&page_size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "08112311232"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET Daftar Kode Bank Beneficiary DANA",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/bank-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "bank-codes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST SNAP Bank Account Inquiry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank_code\": \"014\",\n  \"account_number\": \"1234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/account-inquiry",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "account-inquiry"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST Disburse ke Saldo DANA Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_number\": \"08112311232\",\n  \"amount\": 10000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/dana/transfer-to-balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "dana",
+                "transfer-to-balance"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Mutasi KlikBCA (Flagging Partner)",
+      "item": [
+        {
+          "name": "POST Simpan Rekening BCA Partner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_no\": \"8820019283\",\n  \"user_id\": \"B2BUSER01\",\n  \"pin\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/bca/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "bca",
+                "account"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET List Rekening BCA Partner",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/bca/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "bca",
+                "accounts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST Update Session Cookies KlikBCA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_no\": \"8820019283\",\n  \"jsessionid\": \"COOKIE_JSESSIONID_HERE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/bca/cookies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "bca",
+                "cookies"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET Mutasi Rekening BCA (Strict Partner Flag)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/bca/mutations?limit=25&type=CR",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "bca",
+                "mutations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25"
+                },
+                {
+                  "key": "type",
+                  "value": "CR"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET Status Sesi Scraper KlikBCA",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/bca/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "bca",
+                "session"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Downstream Client Registration",
+      "item": [
+        {
+          "name": "POST Registrasi Client Downstream Baru",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_name\": \"Merchant Kopi Kenangan\",\n  \"phone\": \"08199223344\",\n  \"callback_url\": \"https://merchant.id/callback\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/b2b/clients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "clients"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET List Client Downstream",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/b2b/clients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "b2b",
+                "clients"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
