@@ -397,12 +397,53 @@ func parseBindingURL(raw json.RawMessage) string {
 	return v.OAuthURL
 }
 
+// handleDeleteAccount menghapus rekening milik member (v46: Hapus =
+// unbind). Untuk DANA, ikatan diputuskan di Connecta dulu (POST
+// /b2b/dana/unbind) sebelum baris lokal dihapus — nomor diselesaikan
+// seperti profil (daftar akun Connecta via masked_dana_id, fallback
+// nomor asli). Bila Connecta menjawab 400 ACCOUNT_NOT_FOUND, ikatan
+// sudah tidak ada — lanjut hapus lokal. Error lain → gagal, jangan
+// hapus (member bisa coba lagi). Mutasi ikut terhapus via FK
+// ON DELETE CASCADE. BCA tidak punya endpoint unbind — hapus lokal saja.
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
 	}
 	id, _ := memberID(r)
 	acctID := r.PathValue("id")
+	var provider, credJSON string
+	err := s.store.DB.QueryRowContext(r.Context(), `SELECT provider, credential_ciphertext
+		FROM linked_accounts WHERE id=? AND member_id=?`, acctID, id).Scan(&provider, &credJSON)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", "rekening tidak ditemukan")
+		return
+	}
+	if provider == "DANA" {
+		if phone := s.decryptDANAPhone(credJSON); phone != "" {
+			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			defer cancel()
+			if _, err := s.connecta.DanaUnbind(ctx, s.resolveConnectaDANAPhone(ctx, phone)); err != nil {
+				var he *connecta.HTTPError
+				if errors.As(err, &he) {
+					var body struct {
+						Err string `json:"error"`
+					}
+					_ = json.Unmarshal([]byte(he.Body), &body)
+					if he.Status == http.StatusBadRequest && body.Err == "ACCOUNT_NOT_FOUND" {
+						s.log.Printf("http: dana unbind: sudah tidak ada di Connecta member=%s account=%s, lanjut hapus lokal", id, acctID)
+					} else {
+						s.log.Printf("http: dana unbind gagal member=%s account=%s: HTTP %d", id, acctID, he.Status)
+						writeErr(w, http.StatusBadGateway, "provider_error", "penyedia menolak pemutusan ikatan, coba lagi nanti")
+						return
+					}
+				} else {
+					s.log.Printf("http: dana unbind gagal member=%s account=%s: %v", id, acctID, err)
+					writeErr(w, http.StatusServiceUnavailable, "provider_error", "layanan penyedia sedang gangguan, coba lagi nanti")
+					return
+				}
+			}
+		}
+	}
 	res, err := s.store.DB.ExecContext(r.Context(), `DELETE FROM linked_accounts WHERE id=? AND member_id=?`, acctID, id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error", "gagal menghapus rekening")
@@ -415,6 +456,50 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "member", id, "account_delete", "account "+acctID)
 	writeJSON(w, http.StatusOK, map[string]any{"message": "rekening dihapus"})
+}
+
+// handleMemberSyncAccount memicu sync manual SATU rekening milik member
+// (tombol sinkron di Daftar Rekening, v46). Mirip admin sync, tapi
+// memverifikasi kepemilikan + rate limit 5/mnt/member. Mengabaikan
+// api_delay (seperti admin sync) — jadi dibatasi rate limit.
+func (s *Server) handleMemberSyncAccount(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	id, _ := memberID(r)
+	if !s.limiter.Allow("account-sync:"+id, 5) {
+		writeErr(w, http.StatusTooManyRequests, "rate_limited", "terlalu banyak sinkronisasi, tunggu sebentar lalu coba lagi")
+		return
+	}
+	acctID := r.PathValue("id")
+	var n int
+	if err := s.store.DB.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM linked_accounts WHERE id=? AND member_id=?`, acctID, id).Scan(&n); err != nil || n == 0 {
+		writeErr(w, http.StatusNotFound, "not_found", "rekening tidak ditemukan")
+		return
+	}
+	res, err := s.syncer.SyncAccountByID(r.Context(), acctID)
+	if err != nil {
+		status, code, message := mapSyncAccountError(err)
+		s.audit(r, "member", id, "account_sync_failed", "rekening "+acctID+" ("+code+")")
+		writeErr(w, status, code, message)
+		return
+	}
+	s.audit(r, "member", id, "account_sync", "rekening "+acctID)
+	var lastSyncedAt any
+	if !res.LastSyncedAt.IsZero() {
+		lastSyncedAt = formatWIB(res.LastSyncedAt)
+	}
+	msg := "Sinkronisasi selesai: tidak ada mutasi baru."
+	if res.NewMutations == 1 {
+		msg = "Sinkronisasi selesai: 1 mutasi baru."
+	} else if res.NewMutations > 1 {
+		msg = "Sinkronisasi selesai: " + strconv.Itoa(res.NewMutations) + " mutasi baru."
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"account_id": res.AccountID, "status": accountDisplayStatus(res.DBStatus, res.Frozen),
+		"balance_cents": res.BalanceCents, "last_synced_at": lastSyncedAt,
+		"new_mutations": res.NewMutations, "message": msg,
+	})
 }
 
 // handleRebindDANA membuat ulang link otorisasi OAuth DANA untuk sebuah
@@ -699,29 +784,7 @@ func (s *Server) handleDanaProfile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	// Selesaikan nomor yang dipakai Connecta dari daftar akun partner.
-	queryPhone := phone
-	if raw, err := s.connecta.DanaAccounts(ctx); err == nil {
-		var v struct {
-			Data []struct {
-				Phone        string `json:"phone_number"`
-				PhoneAlt     string `json:"phone"`
-				MaskedDanaID string `json:"masked_dana_id"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(raw, &v) == nil {
-			last4 := danaLast4(phone)
-			for _, d := range v.Data {
-				p := d.Phone
-				if p == "" {
-					p = d.PhoneAlt
-				}
-				if p != "" && danaLast4(d.MaskedDanaID) == last4 {
-					queryPhone = p
-					break
-				}
-			}
-		}
-	}
+	queryPhone := s.resolveConnectaDANAPhone(ctx, phone)
 	raw, err := s.connecta.DanaProfile(ctx, queryPhone)
 	if err != nil {
 		var he *connecta.HTTPError
@@ -827,6 +890,42 @@ func (s *Server) decryptDANAPhone(credJSON string) string {
 		return ""
 	}
 	return normalizeDanaPhone(cred.Phone)
+}
+
+// resolveConnectaDANAPhone menyelesaikan nomor yang dipakai Connecta
+// untuk sebuah nomor DANA member (v45/v46). Connecta TIDAK PERNAH
+// mengembalikan nomor asli — demo memakai nomor default, produksi nomor
+// tersamar — sehingga panggilan profile/unbind dengan nomor asli dijawab
+// 400 ACCOUNT_NOT_FOUND. Caranya: ambil daftar akun partner (GET
+// /b2b/dana/accounts), cocokkan 4 digit terakhir masked_dana_id dengan
+// nomor member, pakai phone_number dari entri itu. Bila tidak cocok /
+// daftar gagal diambil, kembalikan nomor asli (best-effort).
+func (s *Server) resolveConnectaDANAPhone(ctx context.Context, phone string) string {
+	raw, err := s.connecta.DanaAccounts(ctx)
+	if err != nil {
+		return phone
+	}
+	var v struct {
+		Data []struct {
+			Phone        string `json:"phone_number"`
+			PhoneAlt     string `json:"phone"`
+			MaskedDanaID string `json:"masked_dana_id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return phone
+	}
+	last4 := danaLast4(phone)
+	for _, d := range v.Data {
+		p := d.Phone
+		if p == "" {
+			p = d.PhoneAlt
+		}
+		if p != "" && danaLast4(d.MaskedDanaID) == last4 {
+			return p
+		}
+	}
+	return phone
 }
 
 // findMemberDANAAccount mencari rekening DANA milik member yang nomornya

@@ -119,6 +119,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/accounts/dana/reversal", s.authMember(s.handleDanaReversal))
 	// Profil DANA (v45): cek profil rekening DANA milik member sendiri.
 	m.HandleFunc("POST /api/v1/accounts/{id}/dana-profile", s.authMember(s.handleDanaProfile))
+	// Sinkron member (v46): sync manual satu rekening milik member.
+	m.HandleFunc("POST /api/v1/accounts/{id}/sync", s.authMember(s.handleMemberSyncAccount))
 	m.HandleFunc("GET /api/v1/mutasi", s.handleMutasi) // session OR api-key auth
 	m.HandleFunc("GET /api/v1/banks", s.authMember(s.handleBankCodes))
 	m.HandleFunc("POST /api/v1/inquiry/bank-account", s.authMember(s.handleBankInquiry))

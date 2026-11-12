@@ -1636,6 +1636,45 @@ html, body { overflow-x: clip; }
 .member-shell .dana-profile dd { margin: 0; font-size: 14px; font-weight: 600; color: #0f172a; text-align: right; }
 .member-shell .dana-profile dd.mono { font-family: var(--font-mono, ui-monospace, monospace); font-weight: 600; }
 
+/* ===== v46: Daftar Rekening seperti screenshot user ===== */
+/* Kartu ringkasan 3 kolom (Total Saldo / Rekening Aktif / Sinkronisasi
+   Terakhir) — memakai .stat + .stat-right yang sudah ada (ikon kanan). */
+.member-shell .stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 640px) {
+  .member-shell .stat-grid-3 { grid-template-columns: 1fr; }
+}
+/* Badge jenis rekening di samping nama provider (E-Wallet / Bank). */
+.member-shell .accounts-card .acct-provider { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.member-shell .accounts-card .acct-kind-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.02em; white-space: nowrap;
+}
+/* "Update otomatis" kecil di bawah nilai saldo. */
+.member-shell .accounts-card .acct-balance-sub { font-size: 11px; color: #94a3b8; }
+/* Pill Aktif bertitik (hanya di daftar rekening ini, bukan badge global). */
+.member-shell .accounts-card .acct-status .badge-green {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.member-shell .accounts-card .acct-status .badge-green::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+}
+/* Tombol ikon sinkron (lingkaran, border hairline) di kolom Aksi. */
+.member-shell .accounts-card .btn-sync-icon {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.member-shell .accounts-card .btn-sync-icon:hover { background: #f8fafc; border-color: #cbd5e1; }
+.member-shell .accounts-card .btn-sync-icon:disabled { opacity: 0.5; cursor: default; }
+.member-shell .accounts-card .btn-sync-icon:focus-visible { outline: 2px solid #108ee9; outline-offset: 2px; }
+/* Tombol Hapus merah ber-border (bukan ghost polos) — Hapus = unbind. */
+.member-shell .accounts-card .btn-delete-subtle {
+  border: 1px solid #fda4af; background: #fff;
+}
+.member-shell .accounts-card .btn-delete-subtle:hover { background: #fff1f2; border-color: #fb7185; }
+
 /* ===== v35: Inquiry premium — Playground member + admin ===== */
 /* Layout mengikuti referensi user (screenshot 26418_1_dmq2.jpg): header
    badge + chip endpoint, kartu kuota + progress bar, kartu form, kartu

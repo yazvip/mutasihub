@@ -109,6 +109,16 @@ function TrashIcon() {
   );
 }
 
+// v46: ikon sinkron (panah melingkar) untuk tombol sinkron di baris rekening.
+function RefreshIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <polyline points="21 3 21 9 15 9" />
+    </svg>
+  );
+}
+
 function EyeIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -242,6 +252,15 @@ function AccountsContent() {
   const pausedAccounts = accounts.filter((a) => a.sync_paused);
   const runningAccounts = accounts.filter((a) => !a.sync_paused);
   const maxAccounts = runningAccounts.length > 0 ? runningAccounts.length : officialMax;
+  // v46: ringkasan di atas daftar rekening (seperti screenshot user):
+  // total saldo terpantau, jumlah rekening aktif, sinkronisasi terakhir.
+  const totalBalanceCents = accounts.reduce((s, a) => s + (a.balance_cents ?? 0), 0);
+  const activeCount = accounts.filter((a) => a.status === 'active').length;
+  const lastSyncAt = accounts.reduce<string | null>((latest, a) => {
+    if (!a.last_synced_at) return latest;
+    if (!latest) return a.last_synced_at;
+    return new Date(a.last_synced_at).getTime() > new Date(latest).getTime() ? a.last_synced_at : latest;
+  }, null);
 
   useEffect(() => {
     if (loading || pausedAccounts.length === 0 || runningAccounts.length > 0) return;
@@ -284,6 +303,8 @@ function AccountsContent() {
   const [profile, setProfile] = useState<{ accountId: string; phoneMasked: string; accountName: string; kycLevel: string; status: string; updatedAt: string } | null>(null);
   const [profileBusy, setProfileBusy] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
+  // v46: sinkron manual satu rekening (tombol ikon di baris rekening).
+  const [syncBusy, setSyncBusy] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -413,11 +434,14 @@ function AccountsContent() {
     }
   }
 
-  async function removeAccount(id: string) {
-    if (!confirm('Hapus rekening ini? Mutasi yang sudah tercatat tidak ikut terhapus.')) return;
+  async function removeAccount(a: Account) {
+    const isDana = a.provider === 'DANA';
+    if (!confirm(isDana
+      ? 'Hapus rekening ini? Ikatan DANA akan diputuskan di Connecta dan semua mutasi rekening ini akan dihapus.'
+      : 'Hapus rekening ini? Semua mutasi rekening ini akan dihapus.')) return;
     try {
-      await apiDelete(`/api/v1/accounts/${id}`);
-      setNotice('Rekening dihapus.');
+      await apiDelete(`/api/v1/accounts/${a.id}`);
+      setNotice(isDana ? 'Ikatan DANA diputuskan dan rekening dihapus.' : 'Rekening dihapus.');
       await load();
     } catch (err) {
       setError(friendlyError(err));
@@ -469,6 +493,21 @@ function AccountsContent() {
   function closeProfile() {
     setProfile(null);
     setProfileError(null);
+  }
+
+  // v46: sinkron manual satu rekening milik member (POST /api/v1/accounts/{id}/sync).
+  async function syncAccount(accountId: string) {
+    setSyncBusy(accountId);
+    setError(null);
+    try {
+      const d = await apiPost<any>(`/api/v1/accounts/${accountId}/sync`, {});
+      setNotice(d.message || 'Sinkronisasi selesai.');
+      await load();
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setSyncBusy(null);
+    }
   }
 
   return (
@@ -528,12 +567,38 @@ function AccountsContent() {
           }
         />
       ) : (
+        <>
+        {/* v46: kartu ringkasan di atas daftar rekening (seperti screenshot user). */}
+        <div className="stat-grid stat-grid-3" role="group" aria-label="Ringkasan rekening">
+          <div className="stat stat-right">
+            <span className="stat-icon" aria-hidden="true"><WalletIcon /></span>
+            <div className="stat-body">
+              <span className="stat-label">Total Saldo Terpantau</span>
+              <span className="stat-value">{formatRupiah(totalBalanceCents / 100)}</span>
+            </div>
+          </div>
+          <div className="stat stat-right">
+            <span className="stat-icon icon-blue" aria-hidden="true"><LinkIcon /></span>
+            <div className="stat-body">
+              <span className="stat-label">Rekening Aktif</span>
+              <span className="stat-value">{activeCount}</span>
+              <p className="stat-sub">akun</p>
+            </div>
+          </div>
+          <div className="stat stat-right">
+            <span className="stat-icon icon-amber" aria-hidden="true"><RefreshIcon /></span>
+            <div className="stat-body">
+              <span className="stat-label">Sinkronisasi Terakhir</span>
+              <span className="stat-value">{lastSyncAt ? formatDateWIB(lastSyncAt, true, false) : '—'}</span>
+            </div>
+          </div>
+        </div>
         <Card
-          title="Rekening terhubung"
+          title="Daftar Rekening Terhubung"
           className="accounts-card"
           actions={
             <>
-              <span className="acct-count">{accounts.length} rekening</span>
+              <span className="count-chip">{accounts.length} rekening</span>
               <Button className="btn-accounts-add" onClick={() => { setAddTab('dana'); setShowAdd(true); }}>
                 <PlusIcon /> Tambah Rekening
               </Button>
@@ -560,7 +625,10 @@ function AccountsContent() {
                     {a.provider === 'BCA' ? <BankIcon /> : <WalletIcon />}
                   </span>
                   <div className="acct-id">
-                    <div className="acct-provider">{providerLabel(a.provider)}</div>
+                    <div className="acct-provider">
+                      {providerLabel(a.provider)}
+                      <span className="acct-kind-badge">{a.provider === 'BCA' ? 'Bank' : 'E-Wallet'}</span>
+                    </div>
                     <div className="acct-number">
                       {a.provider === 'DANA'
                         ? (a.phone_masked ?? '-')
@@ -584,6 +652,9 @@ function AccountsContent() {
                         ? formatRupiah(a.balance_cents / 100)
                         : '—'}
                     </span>
+                    {a.balance_cents !== undefined && a.balance_cents !== null && (
+                      <span className="acct-balance-sub">Update otomatis</span>
+                    )}
                   </div>
                   <div className="acct-status">
                     <span className="status-badges">
@@ -613,7 +684,19 @@ function AccountsContent() {
                         {profileBusy === a.id ? 'Memuat…' : 'Cek Profil'}
                       </Button>
                     )}
-                    <Button variant="ghost" className="btn-delete-subtle" onClick={() => removeAccount(a.id)}>
+                    {a.status === 'active' && (
+                      <button
+                        type="button"
+                        className="btn-sync-icon"
+                        disabled={syncBusy === a.id}
+                        onClick={() => syncAccount(a.id)}
+                        aria-label="Sinkronkan rekening"
+                        title="Sinkronkan sekarang"
+                      >
+                        <RefreshIcon />
+                      </button>
+                    )}
+                    <Button variant="ghost" className="btn-delete-subtle" onClick={() => removeAccount(a)}>
                       <TrashIcon /> Hapus
                     </Button>
                   </div>
@@ -622,6 +705,7 @@ function AccountsContent() {
             })}
           </ul>
         </Card>
+        </>
       )}
 
       {showAdd && (

@@ -239,6 +239,13 @@ func (c *Client) DanaProfile(ctx context.Context, phone string) (json.RawMessage
 	return c.post(ctx, "/b2b/dana/profile", map[string]string{"phone": phone})
 }
 
+// DanaUnbind posts POST /b2b/dana/unbind (memutuskan ikatan DANA).
+// Dikonfirmasi dari screenshot user 12 Nov 2026 — endpoint ini tidak
+// ada di koleksi Postman maupun /b2b/docs (keduanya sudah dibaca penuh).
+func (c *Client) DanaUnbind(ctx context.Context, phone string) (json.RawMessage, error) {
+	return c.post(ctx, "/b2b/dana/unbind", map[string]string{"phone": phone})
+}
+
 // DanaTransaction is one DANA history row (field names are lenient:
 // unknown upstream shapes fall back to empty fields, never a crash).
 type DanaTransaction struct {
